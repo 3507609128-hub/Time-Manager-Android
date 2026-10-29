@@ -51,12 +51,24 @@ Write-Host "==> APK: dist\$distName ($size MB)" -ForegroundColor Green
 git add -A
 git commit -m $Message
 if ($BypassProxy) {
-    git -c http.proxy= -c https.proxy= push origin main
+    $pushArgs = @("-c", "http.proxy=", "-c", "https.proxy=", "push", "origin", "main")
 } else {
-    git push origin main
+    $pushArgs = @("push", "origin", "main")
 }
-if ($LASTEXITCODE -ne 0) { throw "推送失败，提交已在本地，检查网络/代理后重试：git -c http.proxy= -c https.proxy= push origin main" }
-
+# 本机到 github.com 的直连时好时坏（Recv failure / Could not resolve host），失败就退避重试
+$pushed = $false
+for ($i = 1; $i -le 6 -and -not $pushed; $i++) {
+    if ($i -gt 1) { Write-Host "==> 推送第 $i 次尝试（等 $((6 * ($i - 1))) 秒）..." -ForegroundColor Yellow; Start-Sleep -Seconds (6 * ($i - 1)) }
+    & git @pushArgs 2>&1 | Out-Null
+    if ($LASTEXITCODE -eq 0) { $pushed = $true }
+}
+if (-not $pushed) {
+    Write-Host "!! 推送 6 次都失败了，但提交已经在本地，代码和 APK 都是好的。" -ForegroundColor Yellow
+    Write-Host "   网络恢复后执行这一句补推：" -ForegroundColor Yellow
+    Write-Host "   git -c http.proxy= -c https.proxy= push origin main" -ForegroundColor Yellow
+} else {
+    Write-Host "==> 已推送到 GitHub" -ForegroundColor Green
+}
 Write-Host ""
 Write-Host "完成！CI 构建地址：" -ForegroundColor Green
 Write-Host "  https://github.com/3507609128-hub/Time-Manager-Android/actions" -ForegroundColor Green
