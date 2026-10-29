@@ -85,7 +85,7 @@ class PortraitLayoutTest {
         assertTrue("日程表只剩 ${ag.height / 2f}dp", ag.height > 400f)
     }
 
-    /** 竖屏周视图：时间表占满剩余空间 */
+    /** 竖屏周视图：与月视图一样「日历在上、时间表在下」 */
     @Test
     fun weekViewSharesPortrait() {
         compose.setContent { AppRoot() }
@@ -93,11 +93,20 @@ class PortraitLayoutTest {
         // 切到周视图（工具栏上的「周视图」按钮）
         compose.onNodeWithText(S(Str.VIEW_WEEK)).performClick()
         compose.waitForIdle()
-        compose.onNodeWithTag(TAG_WEEK_SCROLL, useUnmergedTree = true).fetchSemanticsNode()
-            .let { n ->
-                assertTrue("周视图宽度应铺满：${n.size.width / 2f}dp", n.size.width > 600f)
-                assertTrue("周视图高度应铺满：${n.size.height / 2f}dp", n.size.height > 500f)
-            }
+
+        val cal = bounds(TAG_CALENDAR_CARD)
+        val scroll = bounds(TAG_WEEK_SCROLL)
+        println("portrait week cal=${cal.height / 2f}dp grid=${scroll.height / 2f}dp")
+
+        // 1) 周视图也要有日历卡片，且在时间表上方
+        assertTrue(
+            "竖屏周视图应显示日历（cal.bottom=${cal.bottom} grid.top=${scroll.top}）",
+            cal.bottom <= scroll.top + 1f
+        )
+        assertTrue("日历宽度应铺满：${cal.width / 2f}dp", cal.width > 600f)
+        // 2) 时间表占满剩余空间
+        assertTrue("时间表宽度应铺满：${scroll.width / 2f}dp", scroll.width > 600f)
+        assertTrue("时间表只剩 ${scroll.height / 2f}dp", scroll.height > 300f)
     }
 }
 
@@ -131,6 +140,43 @@ class LandscapeLayoutTest {
         // 两栏都应撑满可用高度（411dp * 2 - 工具栏与状态栏）
         assertTrue("横屏日历高度 ${cal.size.height / 2f}dp", cal.size.height > 500f)
         assertTrue("横屏日程表高度 ${ag.size.height / 2f}dp", ag.size.height > 500f)
+
+        // 横屏时卡片被压矮，日期格也要装得下数字（真机反馈“日期数字显示不全”）
+        val grid = compose.onNodeWithTag(TAG_CAL_GRID, useUnmergedTree = true).fetchSemanticsNode()
+        val rows = 5   // 2026-10 是 5 行
+        val cellH = grid.size.height.toFloat() / rows
+        println("landscape calGrid=${grid.size.height / 2f}dp cellH=${cellH / 2f}dp")
+        assertTrue("横屏日期格只有 ${cellH / 2f}dp，数字会被裁", cellH >= 24f * 2f)
+        assertTrue("日期网格高度 ${grid.size.height / 2f}dp 应有 5 行", grid.size.height > 260f)
+    }
+}
+
+@RunWith(AndroidJUnit4::class)
+@Config(sdk = [34], qualifiers = "w740dp-h360dp-land-xhdpi")
+class SmallLandscapeLayoutTest {
+
+    @get:Rule
+    val compose = createComposeRule()
+
+    @Before
+    fun seed() = seedTasks()
+
+    /**
+     * 矮横屏（常见手机横过来只有 360dp 高）：日历被压到最扁，
+     * 日期数字必须仍然放得下，不能被格子裁掉。
+     */
+    @Test
+    fun dateNumbersFitOnShortLandscape() {
+        compose.setContent { AppRoot() }
+        compose.waitForIdle()
+        val grid = compose.onNodeWithTag(TAG_CAL_GRID, useUnmergedTree = true).fetchSemanticsNode()
+        val rows = 5
+        val cellH = grid.size.height.toFloat() / rows
+        println("shortLandscape grid=${grid.size.height / 2f}dp cellH=${cellH / 2f}dp")
+        // 10.5sp 数字(≈14dp) + 1dp 上边距 + 上下 2dp 内边距 → 至少 22dp 才不会裁
+        assertTrue("矮横屏日期格只有 ${cellH / 2f}dp，数字会被裁", cellH >= 22f * 2f)
+        val cal = compose.onNodeWithTag(TAG_CALENDAR_CARD, useUnmergedTree = true).fetchSemanticsNode()
+        assertTrue("矮横屏日历宽度应约 340dp：${cal.size.width / 2f}dp", cal.size.width.toFloat() in 660f..720f)
     }
 }
 

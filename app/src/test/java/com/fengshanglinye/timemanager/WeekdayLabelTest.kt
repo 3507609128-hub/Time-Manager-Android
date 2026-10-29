@@ -39,4 +39,33 @@ class WeekdayLabelTest {
         assertEquals("月曜日", weekFull(1))
         AppState.setLang(LANG_ZH)
     }
+
+    /**
+     * 周视图表头按 ISO 1..7（周一..周日）取名字，第 7 天必须回到「周日」。
+     * 原实现用 `i.coerceIn(0, 6)` 把 7 钳成了 6，于是表头出现两个「六」（真机反馈）。
+     */
+    @Test
+    fun isoIndexSevenIsSunday() {
+        AppState.setLang(LANG_ZH)
+        assertEquals("日", weekShort(7))
+        assertEquals("周日", weekFull(7))
+        AppState.setLang(LANG_EN)
+        assertEquals("Sun", weekShort(7))
+        AppState.setLang(LANG_JA)
+        assertEquals("日", weekShort(7))
+        AppState.setLang(LANG_ZH)
+    }
+
+    /** 周视图表头 7 列必须是 7 个互不相同的星期名（周一开头） */
+    @Test
+    fun weekHeaderHasSevenDistinctLabels() {
+        for (lang in 0 until LANG_COUNT) {
+            AppState.setLang(lang)
+            val labels = (0 until 7).map { weekShort(it + 1) }
+            assertEquals("语言 $lang 的表头应互不相同：$labels", 7, labels.toSet().size)
+            assertEquals("周一应排第一：$labels", weekShort(1), labels.first())
+            assertEquals("周日应排最后：$labels", weekShort(0), labels.last())
+        }
+        AppState.setLang(LANG_ZH)
+    }
 }

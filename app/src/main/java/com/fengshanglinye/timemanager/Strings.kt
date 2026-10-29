@@ -162,11 +162,17 @@ enum class Str(private val line: String) {
         return parts.getOrElse(l) { parts.first() }
     }
 
-    /** 星期表按 (语言, 序号) 取值 */
+    /**
+     * 星期表按 (语言, 序号) 取值。
+     *
+     * 序号 0..6 = 周日..周六，但调用方也常传 ISO 的 1..7（周一..周日），
+     * 所以这里对 7 取模：传 7 必须得到「周日」，不能被钳成 6（那会变成两个周六）。
+     */
     fun day(lang: Int, i: Int): String {
         val parts = line.split('|')
         val base = lang.coerceIn(0, LANG_COUNT - 1) * 7
-        return parts.getOrElse(base + i.coerceIn(0, 6)) { parts.first() }
+        val idx = ((i % 7) + 7) % 7
+        return parts.getOrElse(base + idx) { parts.first() }
     }
 }
 

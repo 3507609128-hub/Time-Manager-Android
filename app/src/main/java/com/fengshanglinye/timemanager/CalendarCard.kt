@@ -38,6 +38,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 
 internal const val TAG_CALENDAR_CARD = "calendar_card"
+internal const val TAG_CAL_GRID = "cal_grid"
 
 /**
  * 左侧月历卡片（月视图与周视图共用，对应 main.cpp 的 DrawCalendar + CalGetLayout）。
@@ -204,6 +205,18 @@ private fun DayCell(
     }
     val bold = hasTask || isToday || isSel
 
+    // 横屏时整张卡片被压矮，单格可能只有 25～30dp：字号、上边距、圆点都要跟着收，
+    // 否则数字底部会被格子裁掉（真机横屏反馈的“日期数字显示不全”）。
+    val compact = innerH < 32.dp
+    val numSize = when {
+        compact -> 10.5.sp
+        d.dayOfMonth >= 10 -> 12.sp
+        else -> 13.sp
+    }
+    val numTop = if (compact) 1.dp else 6.dp
+    val dotR = if (compact) 2.dp else 2.5.dp
+    val dotBottom = if (compact) 2.dp else 5.dp
+
     Box(Modifier.size(w, h).clickable { onClick() }) {
         Box(
             Modifier
@@ -222,20 +235,20 @@ private fun DayCell(
             Txt(
                 "${d.dayOfMonth}",
                 numColor,
-                if (d.dayOfMonth >= 10) 12.sp else 13.sp,
+                numSize,
                 if (bold) FontWeight.Bold else FontWeight.Normal,
                 align = TextAlign.Center,
-                modifier = Modifier.fillMaxWidth().padding(top = 6.dp)
+                modifier = Modifier.fillMaxWidth().padding(top = numTop)
             )
 
             // 分类圆点：最多 3 个，居中排列在格子底部
             if (cats.isNotEmpty()) {
                 Row(
-                    Modifier.fillMaxWidth().align(Alignment.BottomCenter).padding(bottom = 5.dp),
+                    Modifier.fillMaxWidth().align(Alignment.BottomCenter).padding(bottom = dotBottom),
                     horizontalArrangement = Arrangement.Center
                 ) {
                     for (c in cats.take(3)) {
-                        Dot(Categories.fill(c), 2.5.dp)
+                        Dot(Categories.fill(c), dotR)
                         Spacer(Modifier.width(3.dp))
                     }
                 }
@@ -259,7 +272,7 @@ private fun DateGrid(
     cellH: Dp,
     onPickDate: (LocalDate) -> Unit
 ) {
-    Column(Modifier.fillMaxWidth()) {
+    Column(Modifier.fillMaxWidth().testTag(TAG_CAL_GRID)) {
         for (r in 0 until rows) {
             Row(Modifier.fillMaxWidth().height(cellH)) {
                 for (col in 0 until 7) {

@@ -241,37 +241,39 @@ fun AppRoot() {
                         }
                     }
                 } else {
-                    // 手机竖屏：月视图 = 日历在上（按内容高度）、日程表在下（占满剩余）
+                    // 手机竖屏：两种视图都是「日历在上、内容在下」
+                    //  · 月视图 → 下面放日程表
+                    //  · 周视图 → 下面放时间表（用户要求与月视图一致）
+                    BoxWithConstraints(Modifier.fillMaxWidth().padding(horizontal = 12.dp)) {
+                        // 格子按屏幕宽度算成接近正方形，整张卡片由内容决定高度，
+                        // 这样竖屏下日历不会把整屏吃光，下面的内容才有空间显示。
+                        val cellW = (maxWidth - 8.dp) / 7
+                        val cellH = (cellW * 0.92f).coerceIn(32.dp, 56.dp)
+                        CalendarCard(
+                            t = theme,
+                            modifier = Modifier.fillMaxWidth(),
+                            year = AppState.calYear,
+                            month = AppState.calMonth,
+                            selected = AppState.filterDate,
+                            cellHeight = cellH,
+                            onPrevMonth = { shiftMonth(-1) },
+                            onNextMonth = { shiftMonth(1) },
+                            onPickDate = { pickDate(it) },
+                            onToggleAutostart = { on ->
+                                saveSettings(
+                                    AppState.settings.copy(autostart = on), AppState.lang
+                                )
+                            }
+                        )
+                    }
+                    Spacer(Modifier.height(8.dp))
                     if (isMonth) {
-                        BoxWithConstraints(Modifier.fillMaxWidth().padding(horizontal = 12.dp)) {
-                            // 格子按屏幕宽度算成接近正方形，整张卡片由内容决定高度，
-                            // 这样竖屏下日历不会把整屏吃光，日程表才有空间显示。
-                            val cellW = (maxWidth - 8.dp) / 7
-                            val cellH = (cellW * 0.92f).coerceIn(32.dp, 56.dp)
-                            CalendarCard(
-                                t = theme,
-                                modifier = Modifier.fillMaxWidth(),
-                                year = AppState.calYear,
-                                month = AppState.calMonth,
-                                selected = AppState.filterDate,
-                                cellHeight = cellH,
-                                onPrevMonth = { shiftMonth(-1) },
-                                onNextMonth = { shiftMonth(1) },
-                                onPickDate = { pickDate(it) },
-                                onToggleAutostart = { on ->
-                                    saveSettings(
-                                        AppState.settings.copy(autostart = on), AppState.lang
-                                    )
-                                }
-                            )
-                        }
-                        Spacer(Modifier.height(8.dp))
                         Box(Modifier.fillMaxWidth().weight(1f).padding(horizontal = 12.dp)) {
                             agenda(Modifier.fillMaxSize())
                         }
                     } else {
-                        Row(Modifier.fillMaxWidth().weight(1f).padding(horizontal = 8.dp)) {
-                            WeekGrid(t = theme, modifier = Modifier.weight(1f).fillMaxHeight())
+                        Box(Modifier.fillMaxWidth().weight(1f).padding(horizontal = 8.dp)) {
+                            WeekGrid(t = theme, modifier = Modifier.fillMaxSize())
                         }
                     }
                 }
