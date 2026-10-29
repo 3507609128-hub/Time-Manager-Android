@@ -23,6 +23,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
@@ -35,6 +36,8 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+
+internal const val TAG_CALENDAR_CARD = "calendar_card"
 
 /**
  * 左侧月历卡片（月视图与周视图共用，对应 main.cpp 的 DrawCalendar + CalGetLayout）。
@@ -54,6 +57,8 @@ fun CalendarCard(
     year: Int,
     month: Int,
     selected: LocalDate?,
+    /** 竖屏模式传入固定格子高度；为 null 时沿用双栏的“撑满可用高度”行为 */
+    cellHeight: Dp? = null,
     onPrevMonth: () -> Unit,
     onNextMonth: () -> Unit,
     onPickDate: (LocalDate) -> Unit,
@@ -65,8 +70,24 @@ fun CalendarCard(
     val firstW = first.dayOfWeek.value % 7           // 周日 = 0，与 Win32 一致
     val rows = (firstW + days + 6) / 7               // 4 ~ 6 行自动适配
 
-    Card(t, modifier) {
-        Column(Modifier.fillMaxSize()) {
+    // 左右滑动翻月：对应原版的滚轮 / 方向键切换月份
+    var dragAcc by remember { mutableStateOf(0f) }
+    val swipe = Modifier.pointerInput(Unit) {
+        detectHorizontalDragGestures(
+            onDragStart = { dragAcc = 0f },
+            onDragEnd = {
+                if (dragAcc > 60f) onPrevMonth()
+                else if (dragAcc < -60f) onNextMonth()
+                dragAcc = 0f
+            },
+            onDragCancel = { dragAcc = 0f }
+        ) { _, dx -> dragAcc += dx }
+    }
+
+    Card(t, modifier.testTag(TAG_CALENDAR_CARD)) {
+        // cellHeight != null → 竖屏模式：卡片按内容高度排版（日历在上、日程表在下）
+        // cellHeight == null → 双栏模式：日历撑满可用高度（与原版桌面一致）
+        Column(if (cellHeight == null) Modifier.fillMaxSize() else Modifier.fillMaxWidth()) {
 
             /*-------------------- 月份标题行 --------------------*/
             Row(
@@ -101,54 +122,32 @@ fun CalendarCard(
             }
 
             /*-------------------- 日期网格 --------------------*/
-            // 左右滑动翻月：对应原版的滚轮 / 方向键切换月份
-            var dragAcc by remember { mutableStateOf(0f) }
-            BoxWithConstraints(
-                Modifier
-                    .fillMaxWidth()
-                    .weight(1f)
-                    .padding(horizontal = 4.dp)
-                    .pointerInput(Unit) {
-                        detectHorizontalDragGestures(
-                            onDragStart = { dragAcc = 0f },
-                            onDragEnd = {
-                                if (dragAcc > 60f) onPrevMonth()
-                                else if (dragAcc < -60f) onNextMonth()
-                                dragAcc = 0f
-                            },
-                            onDragCancel = { dragAcc = 0f }
-                        ) { _, dx -> dragAcc += dx }
+            if (cellHeight == null) {
+                BoxWithConstraints(
+                    Modifier.fillMaxWidth().weight(1f).padding(horizontal = 4.dp).then(swipe)
+                ) {
+                    val cellW = maxWidth / 7
+                    val availH = maxHeight
+                    // 与原版一致：优先撑满剩余高度，单格最高 64dp
+                    val cellH = min(availH.value / rows, 64f).dp
+                    // 网格整体在剩余空间里垂直居中
+                    val offsetY = ((availH.value - cellH.value * rows) / 2f)
+                        .coerceAtLeast(0f).dp
+                    Box(Modifier.fillMaxWidth().offset(y = offsetY)) {
+                        DateGrid(
+                            t, year, month, firstW, days, rows,
+                            today, selected, cellW, cellH, onPickDate
+                        )
                     }
-            ) {
-                val cellW = maxWidth / 7
-                val availH = maxHeight
-                // 与原版一致：优先撑满剩余高度，单格最高 64dp
-                val cellH = min(availH.value / rows, 64f).dp
-                // 网格整体在剩余空间里垂直居中
-                val offsetY = ((availH.value - cellH.value * rows) / 2f).coerceAtLeast(0f).dp
-
-                Column(Modifier.fillMaxWidth().offset(y = offsetY)) {
-                    for (r in 0 until rows) {
-                        Row(Modifier.fillMaxWidth().height(cellH)) {
-                            for (col in 0 until 7) {
-                                val day = r * 7 + col - firstW + 1
-                                Box(Modifier.width(cellW).height(cellH)) {
-                                    if (day in 1..days) {
-                                        val d = LocalDate.of(year, month, day)
-                                        DayCell(
-                                            t = t, d = d, w = cellW, h = cellH,
-                                            hasTask = AppState.countOnDate(d) > 0,
-                                            cats = AppState.dayCategories(d, 3),
-                                            isToday = d == today,
-                                            isSel = d == selected,
-                                            isWeekend = col == 0 || col == 6,
-                                            onClick = { onPickDate(d) }
-                                        )
-                                    }
-                                }
-                            }
-                        }
-                    }
+                }
+            } else {
+                BoxWithConstraints(
+                    Modifier.fillMaxWidth().padding(horizontal = 4.dp).then(swipe)
+                ) {
+                    DateGrid(
+                        t, year, month, firstW, days, rows,
+                        today, selected, maxWidth / 7, cellHeight, onPickDate
+                    )
                 }
             }
 
@@ -238,6 +237,46 @@ private fun DayCell(
                     for (c in cats.take(3)) {
                         Dot(Categories.fill(c), 2.5.dp)
                         Spacer(Modifier.width(3.dp))
+                    }
+                }
+            }
+        }
+    }
+}
+
+/** 日期格子布局（两种模式共用：双栏撑满 / 竖屏固定格子高度） */
+@Composable
+private fun DateGrid(
+    t: Theme,
+    year: Int,
+    month: Int,
+    firstW: Int,
+    days: Int,
+    rows: Int,
+    today: LocalDate,
+    selected: LocalDate?,
+    cellW: Dp,
+    cellH: Dp,
+    onPickDate: (LocalDate) -> Unit
+) {
+    Column(Modifier.fillMaxWidth()) {
+        for (r in 0 until rows) {
+            Row(Modifier.fillMaxWidth().height(cellH)) {
+                for (col in 0 until 7) {
+                    val day = r * 7 + col - firstW + 1
+                    Box(Modifier.width(cellW).height(cellH)) {
+                        if (day in 1..days) {
+                            val d = LocalDate.of(year, month, day)
+                            DayCell(
+                                t = t, d = d, w = cellW, h = cellH,
+                                hasTask = AppState.countOnDate(d) > 0,
+                                cats = AppState.dayCategories(d, 3),
+                                isToday = d == today,
+                                isSel = d == selected,
+                                isWeekend = col == 0 || col == 6,
+                                onClick = { onPickDate(d) }
+                            )
+                        }
                     }
                 }
             }

@@ -29,6 +29,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
@@ -36,6 +37,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import java.time.LocalDate
 import java.time.LocalDateTime
+
+internal const val TAG_AGENDA_LIST = "agenda_list"
 
 /**
  * 右侧活动流（对应 main.cpp 的 DrawAgenda + AgGetItems）。
@@ -65,7 +68,7 @@ fun AgendaList(
         map.entries.map { Pair(it.key, it.value.toList()) }
     }
 
-    Card(t, modifier) {
+    Card(t, modifier.testTag(TAG_AGENDA_LIST)) {
         Column(Modifier.fillMaxSize()) {
             // 多选辅助条：对应原版 Ctrl+A 全选 / Esc 取消选择
             val selCount = AppState.selectedIds.size

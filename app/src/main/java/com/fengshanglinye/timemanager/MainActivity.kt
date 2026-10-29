@@ -241,10 +241,29 @@ fun AppRoot() {
                         }
                     }
                 } else {
-                    // 手机竖屏：月视图=日历+当天活动流；周视图=时间表
+                    // 手机竖屏：月视图 = 日历在上（按内容高度）、日程表在下（占满剩余）
                     if (isMonth) {
-                        Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp)) {
-                            cal(Modifier.weight(1f))
+                        BoxWithConstraints(Modifier.fillMaxWidth().padding(horizontal = 12.dp)) {
+                            // 格子按屏幕宽度算成接近正方形，整张卡片由内容决定高度，
+                            // 这样竖屏下日历不会把整屏吃光，日程表才有空间显示。
+                            val cellW = (maxWidth - 8.dp) / 7
+                            val cellH = (cellW * 0.92f).coerceIn(32.dp, 56.dp)
+                            CalendarCard(
+                                t = theme,
+                                modifier = Modifier.fillMaxWidth(),
+                                year = AppState.calYear,
+                                month = AppState.calMonth,
+                                selected = AppState.filterDate,
+                                cellHeight = cellH,
+                                onPrevMonth = { shiftMonth(-1) },
+                                onNextMonth = { shiftMonth(1) },
+                                onPickDate = { pickDate(it) },
+                                onToggleAutostart = { on ->
+                                    saveSettings(
+                                        AppState.settings.copy(autostart = on), AppState.lang
+                                    )
+                                }
+                            )
                         }
                         Spacer(Modifier.height(8.dp))
                         Box(Modifier.fillMaxWidth().weight(1f).padding(horizontal = 12.dp)) {
