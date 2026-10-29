@@ -1,0 +1,12 @@
+* text=auto
+
+# Gradle wrapper 在 Linux/macOS 上必须有可执行位
+gradlew text eol=lf
+*.sh text eol=lf
+*.bat text eol=crlf
+*.kt text eol=lf
+*.kts text eol=lf
+*.md text eol=lf
+*.png binary
+*.jar binary
+*.apk binary

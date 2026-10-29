@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">时间管理器</string>
+    <string name="channel_reminder">日程提醒</string>
+    <string name="channel_reminder_desc">日程到点提醒通知</string>
+    <string name="channel_service">后台提醒服务</string>
+    <string name="channel_service_desc">保证关闭应用后仍能按时提醒</string>
+</resources>

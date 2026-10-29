@@ -1,0 +1,29 @@
+# 构建产物
+/build
+/app/build/
+/captures
+.externalNativeBuild
+.cxx
+dist/
+
+# Gradle / Kotlin
+.gradle/
+.kotlin/
+
+# IDE
+*.iml
+/.idea/
+/.vscode/
+
+# 本机配置（含 SDK 路径，绝对不能提交）
+local.properties
+
+# 系统文件
+.DS_Store
+Thumbs.db
+
+# 签名与密钥（永远不要提交）
+*.jks
+*.keystore
+key.properties
+*.p12

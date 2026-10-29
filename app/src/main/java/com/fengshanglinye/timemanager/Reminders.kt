@@ -1,0 +1,296 @@
+package com.fengshanglinye.timemanager
+
+import android.app.AlarmManager
+import android.app.Notification
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.app.PendingIntent
+import android.content.BroadcastReceiver
+import android.content.Context
+import android.content.Intent
+import android.media.AudioAttributes
+import android.media.MediaPlayer
+import android.media.RingtoneManager
+import android.net.Uri
+import android.os.Build
+import android.os.VibrationEffect
+import android.os.Vibrator
+import androidx.core.app.NotificationCompat
+import java.time.Duration
+import java.time.LocalDateTime
+import java.time.ZoneId
+
+/**
+ * 提醒引擎（对应 Win32 版的 CheckReminders + QueueToast + PlayReminderSound）。
+ *
+ * Android 上没有“窗口常驻 + 定时器弹 Toast”这一套，改成：
+ *  1. 用 AlarmManager 为每条未触发的提醒规则排一个精确闹钟；
+ *  2. 到点由 ReminderReceiver 拉起通知（通知栏相当于原来的右下角 Toast）；
+ *  3. 主程序前台时同时显示应用内的悬浮提醒卡片（视觉上更贴近原版）。
+ */
+object Reminders {
+
+    const val ACTION_FIRE = "com.fengshanglinye.timemanager.FIRE"
+    const val EXTRA_TASK_ID = "task_id"
+    const val EXTRA_LEAD = "lead"
+
+    private const val CHANNEL_REMINDER = "reminder"
+
+    /*------------------------- 通道 -------------------------*/
+
+    fun ensureChannels(ctx: Context) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
+        val nm = ctx.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        if (nm.getNotificationChannel(CHANNEL_REMINDER) == null) {
+            val ch = NotificationChannel(
+                CHANNEL_REMINDER, ctx.getString(R.string.channel_reminder),
+                NotificationManager.IMPORTANCE_HIGH
+            )
+            ch.description = ctx.getString(R.string.channel_reminder_desc)
+            ch.enableVibration(true)
+            ch.setShowBadge(true)
+            nm.createNotificationChannel(ch)
+        }
+        if (nm.getNotificationChannel(ReminderService.CHANNEL_SERVICE) == null) {
+            val ch = NotificationChannel(
+                ReminderService.CHANNEL_SERVICE, ctx.getString(R.string.channel_service),
+                NotificationManager.IMPORTANCE_MIN
+            )
+            ch.description = ctx.getString(R.string.channel_service_desc)
+            ch.setShowBadge(false)
+            nm.createNotificationChannel(ch)
+        }
+    }
+
+    /*------------------------- 闹钟 -------------------------*/
+
+    private fun pendingFor(ctx: Context, taskId: Int, lead: Int): PendingIntent {
+        val i = Intent(ctx, ReminderReceiver::class.java).apply {
+            action = ACTION_FIRE
+            putExtra(EXTRA_TASK_ID, taskId)
+            putExtra(EXTRA_LEAD, lead)
+        }
+        var flags = PendingIntent.FLAG_UPDATE_CURRENT
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            flags = flags or PendingIntent.FLAG_IMMUTABLE
+        }
+        val code = taskId * 100 + (lead % 100)
+        return PendingIntent.getBroadcast(ctx, code, i, flags)
+    }
+
+    fun canScheduleExact(ctx: Context): Boolean {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) return true
+        val am = ctx.getSystemService(Context.ALARM_SERVICE) as AlarmManager
+        return am.canScheduleExactAlarms()
+    }
+
+    /** 为一条提醒规则设定闹钟；已过去的时间点直接跳过 */
+    fun schedule(ctx: Context, t: Task, lead: Int) {
+        val fireAt = t.start.minusMinutes(lead.toLong())
+        if (fireAt.isBefore(LocalDateTime.now())) return
+        val am = ctx.getSystemService(Context.ALARM_SERVICE) as AlarmManager
+        val pi = pendingFor(ctx, t.id, lead)
+        val ms = fireAt.atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()
+        try {
+            if (canScheduleExact(ctx)) {
+                am.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, ms, pi)
+            } else {
+                am.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, ms, pi)
+            }
+        } catch (e: SecurityException) {
+            am.set(AlarmManager.RTC_WAKEUP, ms, pi)
+        }
+    }
+
+    fun cancelAll(ctx: Context, tasks: List<Task>) {
+        val am = ctx.getSystemService(Context.ALARM_SERVICE) as AlarmManager
+        for (t in tasks) {
+            for (r in t.rules) {
+                am.cancel(pendingFor(ctx, t.id, r.minutes))
+            }
+        }
+    }
+
+    /** 重建所有未触发规则的闹钟（启动、开机、数据变更后调用） */
+    fun rescheduleAll(ctx: Context, tasks: List<Task>) {
+        ensureChannels(ctx)
+        cancelAll(ctx, tasks)
+        val now = LocalDateTime.now()
+        for (t in tasks) {
+            if (t.start.isBefore(now)) continue
+            for (r in t.rules) {
+                if (!r.fired) schedule(ctx, t, r.minutes)
+            }
+        }
+    }
+
+    /*------------------------- 触发检查 -------------------------*/
+
+    /**
+     * 与 Win32 版 CheckReminders 同逻辑：进入“提前 N 分钟”窗口就触发。
+     * 返回被触发规则的 (任务, 提前分钟数) 列表，并把 fired 置真。
+     */
+    fun checkDue(tasks: List<Task>): Pair<List<Task>, List<Pair<Task, Int>>> {
+        val now = LocalDateTime.now()
+        val fired = ArrayList<Pair<Task, Int>>()
+        val updated = tasks.map { t ->
+            val diff = Duration.between(now, t.start).seconds
+            if (diff < 0) {
+                if (t.rules.any { !it.fired }) {
+                    t.copy(rules = t.rules.map { it.copy(fired = true) })
+                } else t
+            } else {
+                val due = t.rules.filter { !it.fired && diff <= it.minutes.toLong() * 60 }
+                if (due.isEmpty()) t
+                else {
+                    for (r in due) fired.add(Pair(t, r.minutes))
+                    t.copy(rules = t.rules.map {
+                        if (!it.fired && diff <= it.minutes.toLong() * 60) it.copy(fired = true) else it
+                    })
+                }
+            }
+        }
+        return Pair(updated, fired)
+    }
+
+    /*------------------------- 通知 -------------------------*/
+
+    fun buildReminderNotification(
+        ctx: Context, t: Task, lead: Int, themeNameIdx: Int
+    ): Notification {
+        ensureChannels(ctx)
+        val theme = Themes.of(ThemeId.of(themeNameIdx))
+
+        val shortTitle = if (t.title.length > 24) t.title.take(24) + "…" else t.title
+        val head = S(Str.TOAST_HEAD).format(shortTitle, fmtLead(lead))
+        val body1 = S(Str.TOAST_TIME).format(
+            fmtDate(t.startDate), weekFull(t.startDate.dayOfWeek.value % 7),
+            fmtTime(t.start.toLocalTime()), fmtTime(t.end.toLocalTime())
+        )
+        val body2 = if (t.note.isNotEmpty()) S(Str.TOAST_NOTE).format(t.note) else ""
+
+        val nm = ctx.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        val ch = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) CHANNEL_REMINDER else null
+
+        val b = NotificationCompat.Builder(ctx, ch ?: CHANNEL_REMINDER)
+            .setSmallIcon(R.drawable.ic_stat_reminder)
+            .setColor(android.graphics.Color.rgb(
+                (theme.accent.red * 255).toInt(),
+                (theme.accent.green * 255).toInt(),
+                (theme.accent.blue * 255).toInt()
+            ))
+            .setContentTitle(head)
+            .setContentText(body1)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(if (body2.isEmpty()) body1 else "$body1\n$body2"))
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setCategory(NotificationCompat.CATEGORY_REMINDER)
+            .setAutoCancel(true)
+            .setContentIntent(openAppIntent(ctx, t.id))
+            .setOnlyAlertOnce(false)
+            .setVibrate(longArrayOf(0, 180, 90, 180))
+
+        if (lead <= 5) {
+            // 马上开始：优先提醒
+            b.setDefaults(NotificationCompat.DEFAULT_ALL)
+        }
+        return b.build()
+    }
+
+    fun openAppIntent(ctx: Context, taskId: Int): PendingIntent {
+        val i = Intent(ctx, MainActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+            putExtra("task_id", taskId)
+        }
+        var flags = PendingIntent.FLAG_UPDATE_CURRENT
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            flags = flags or PendingIntent.FLAG_IMMUTABLE
+        }
+        return PendingIntent.getActivity(ctx, taskId + 900000, i, flags)
+    }
+
+    fun notifyReminder(ctx: Context, t: Task, lead: Int, themeIdx: Int) {
+        ensureChannels(ctx)
+        val nm = ctx.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        val id = t.id * 100 + (lead % 100)
+        try {
+            nm.notify(id, buildReminderNotification(ctx, t, lead, themeIdx))
+        } catch (e: SecurityException) {
+            // 没有通知权限时静默失败（与原版“不弹提示”一致）
+        }
+        val st = Store.loadSettings(ctx).first
+        playSound(ctx, st.sound, st.wavPath)
+    }
+
+    /*------------------------- 提示音 -------------------------*/
+
+    private var player: MediaPlayer? = null
+
+    /** 对应 PlayReminderSound()：静音 / 系统默认 / 五种系统音 / 自定义文件 */
+    fun playSound(ctx: Context, sound: Int, wavPath: String) {
+        if (sound == SOUND_MUTE) return
+        try {
+            if (sound == SOUND_BEEP) {
+                val v = ctx.getSystemService(Context.VIBRATOR_SERVICE) as Vibrator
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    v.vibrate(VibrationEffect.createOneShot(120, VibrationEffect.DEFAULT_AMPLITUDE))
+                } else {
+                    @Suppress("DEPRECATION")
+                    v.vibrate(120)
+                }
+                return
+            }
+            val uri: Uri = if (sound == SOUND_WAV && wavPath.isNotEmpty()) {
+                Uri.parse(if (wavPath.startsWith("/")) "file://$wavPath" else wavPath)
+            } else when (sound) {
+                SOUND_EXCLAM -> RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM)
+                SOUND_HAND -> RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION)
+                else -> RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION)
+            }
+            player?.release()
+            player = MediaPlayer().apply {
+                setAudioAttributes(
+                    AudioAttributes.Builder()
+                        .setUsage(AudioAttributes.USAGE_NOTIFICATION_EVENT)
+                        .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                        .build()
+                )
+                setDataSource(ctx, uri)
+                isLooping = false
+                setOnCompletionListener { p -> p.release() }
+                prepare()
+                start()
+            }
+        } catch (e: Exception) {
+            // 播放失败不影响提醒本身
+        }
+    }
+}
+
+/** 闹钟到点接收器 */
+class ReminderReceiver : BroadcastReceiver() {
+    override fun onReceive(context: Context, intent: Intent) {
+        if (intent.action != Reminders.ACTION_FIRE) return
+        val taskId = intent.getIntExtra(Reminders.EXTRA_TASK_ID, 0)
+        val lead = intent.getIntExtra(Reminders.EXTRA_LEAD, 0)
+        // 读最新数据，避免使用过期快照
+        val tasks = Store.loadTasks(context)
+        val t = tasks.firstOrNull { it.id == taskId } ?: return
+        val settings = Store.loadSettings(context).first
+
+        // 与 Win32 版 CheckReminders 一致：先把这条规则标为已提醒并落盘，
+        // 否则下次 rescheduleAll 会重新排同一个闹钟，导致重复通知。
+        if (t.rules.none { it.minutes == lead && !it.fired }) return
+        val updated = tasks.map { task ->
+            if (task.id != taskId) task
+            else task.copy(
+                rules = task.rules.map {
+                    if (it.minutes == lead) it.copy(fired = true) else it
+                }
+            )
+        }
+        Store.saveTasks(context, updated)
+        Reminders.rescheduleAll(context, updated)
+
+        Reminders.notifyReminder(context, t, lead, settings.theme)
+    }
+}
