@@ -127,7 +127,7 @@ app/src/main/java/com/fengshanglinye/timemanager/
   ReminderService.kt   前台服务（对应桌面版“托盘常驻”；文件末尾含 BootReceiver 开机自启）
 app/src/test/java/...  纯 JVM 单元测试（数据格式、规则收敛、跨天时段、周视图分列）
 app/src/main/res/      图标、字符串、主题
-docs/                  README 使用的图标
+docs/                  README 使用的图标、发布说明模板 `release-notes-template.md`
 ```
 
 ## 与桌面版的差异
@@ -192,7 +192,7 @@ docs/                  README 使用的图标
 
 ```powershell
 cd $env:USERPROFILE\Desktop\Time-Manager-Android
-.\release.ps1 -Version 1.0.4 -Message "1.0.4：修复 XXX"
+.\release.ps1 -Version 1.0.5 -Message "1.0.5：修复 XXX"
 ```
 
 - `versionCode` 自动 +1，不用手动改
