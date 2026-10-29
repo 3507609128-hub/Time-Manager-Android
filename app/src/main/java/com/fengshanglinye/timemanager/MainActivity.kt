@@ -327,7 +327,18 @@ fun AppRoot() {
                     saveSettings(s, lang)
                     showSettings = false
                 },
-                onTestSound = { sound, path -> Reminders.previewSound(ctx, sound, path) },
+                onTestSound = { sound, path ->
+                Reminders.previewSound(ctx, sound, path)
+                // 试听时给一条可见反馈：手机静音 / 媒体音量为 0 时也能知道“按钮确实点到了”
+                try {
+                    android.widget.Toast.makeText(
+                        ctx, S(Str.SET_TEST_PLAYING).format(soundName(sound)),
+                        android.widget.Toast.LENGTH_SHORT
+                    ).show()
+                } catch (e: Exception) {
+                    // 后台线程/无 UI 环境下忽略
+                }
+            },
                 onBrowseWav = { cb ->
                     audioPickHost = cb
                     runCatching { audioPicker.launch(arrayOf("audio/*")) }

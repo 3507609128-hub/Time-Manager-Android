@@ -277,6 +277,9 @@ object Reminders {
             var uri = RingtoneManager.getDefaultUri(type)
             if (uri == null) uri = android.provider.Settings.System.DEFAULT_NOTIFICATION_URI
             if (uri != null) {
+                // 试听优先用 MediaPlayer 走媒体音量（部分 ROM 上 Ringtone 会被当成通知音而静音），
+                // 提醒到点则优先用 Ringtone，跟随系统通知设置。
+                if (preview && playUri(ctx, uri, attrs)) return
                 val rt = RingtoneManager.getRingtone(ctx, uri)
                 if (rt != null) {
                     rt.audioAttributes = attrs
@@ -284,8 +287,8 @@ object Reminders {
                     rt.play()
                     return
                 }
+                if (playUri(ctx, uri, attrs)) return
             }
-            if (uri != null && playUri(ctx, uri, attrs)) return
             beep(preview)
         } catch (e: Exception) {
             runCatching { beep(preview) }   // 播放失败不影响提醒本身，也不再完全静音

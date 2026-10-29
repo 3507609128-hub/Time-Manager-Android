@@ -97,6 +97,7 @@ enum class Str(private val line: String) {
     SET_BROWSE("浏览…|参照…|Browse…"),
     SET_HINT("选择“自定义音频文件”时，请指定一个音频文件作为提醒声音。|「カスタム音声ファイル」を選んだ場合は、通知音として音声ファイルを指定してください。|When \"Custom audio file\" is selected, choose an audio file as the reminder sound."),
     SET_TEST_MUTE("已选择静音，不会播放声音。|消音が選択されているため、音は再生されません。|Mute is selected, so no sound will play."),
+    SET_TEST_PLAYING("试听：%s（若无声，请检查媒体音量）|試聴：%s（音が出ない場合はメディア音量を確認）|Playing: %s (check media volume if silent)"),
     SET_TEST_NO_WAV("请先选择一个音频文件。|先に音声ファイルを選択してください。|Please choose an audio file first."),
     SET_EXACT("精确提醒|正確な通知|Exact reminders"),
     SET_EXACT_HINT("允许准时提醒（需要系统“闹钟与提醒”权限）。|時間どおりの通知を許可します（「アラームとリマインダー」権限）。|Allow on-time reminders (requires the system \"Alarms & reminders\" permission)."),
