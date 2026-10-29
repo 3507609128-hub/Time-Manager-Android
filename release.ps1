@@ -10,7 +10,9 @@ param(
     [Parameter(Mandatory = $true)][string]$Message,
     # 本机 git 全局配置了 http://127.0.0.1:12000 代理，但代理软件没开时推送会失败；
     # 这个开关让本次推送绕过代理直连 github（默认开启，失败时再手动处理）。
-    [switch]$BypassProxy = $true
+    [switch]$BypassProxy = $true,
+    # 只在本机打包、不推送（代码和 APK 照样产出）
+    [switch]$NoPush
 )
 
 $ErrorActionPreference = "Stop"
@@ -50,24 +52,28 @@ Write-Host "==> APK: dist\$distName ($size MB)" -ForegroundColor Green
 # ---------- 5. 提交并推送 ----------
 git add -A
 git commit -m $Message
-if ($BypassProxy) {
-    $pushArgs = @("-c", "http.proxy=", "-c", "https.proxy=", "push", "origin", "main")
+if ($NoPush) {
+    Write-Host "==> 已按 -NoPush 跳过提交后的推送（提交已在本地）" -ForegroundColor Yellow
 } else {
-    $pushArgs = @("push", "origin", "main")
-}
-# 本机到 github.com 的直连时好时坏（Recv failure / Could not resolve host），失败就退避重试
-$pushed = $false
-for ($i = 1; $i -le 6 -and -not $pushed; $i++) {
-    if ($i -gt 1) { Write-Host "==> 推送第 $i 次尝试（等 $((6 * ($i - 1))) 秒）..." -ForegroundColor Yellow; Start-Sleep -Seconds (6 * ($i - 1)) }
-    & git @pushArgs 2>&1 | Out-Null
-    if ($LASTEXITCODE -eq 0) { $pushed = $true }
-}
-if (-not $pushed) {
-    Write-Host "!! 推送 6 次都失败了，但提交已经在本地，代码和 APK 都是好的。" -ForegroundColor Yellow
-    Write-Host "   网络恢复后执行这一句补推：" -ForegroundColor Yellow
-    Write-Host "   git -c http.proxy= -c https.proxy= push origin main" -ForegroundColor Yellow
-} else {
-    Write-Host "==> 已推送到 GitHub" -ForegroundColor Green
+    if ($BypassProxy) {
+        $pushArgs = @("-c", "http.proxy=", "-c", "https.proxy=", "push", "origin", "main")
+    } else {
+        $pushArgs = @("push", "origin", "main")
+    }
+    # 本机到 github.com 的直连时好时坏（Recv failure / Could not resolve host），失败就退避重试
+    $pushed = $false
+    for ($i = 1; $i -le 6 -and -not $pushed; $i++) {
+        if ($i -gt 1) { Write-Host "==> 推送第 $i 次尝试（等 $((6 * ($i - 1))) 秒）..." -ForegroundColor Yellow; Start-Sleep -Seconds (6 * ($i - 1)) }
+        & git @pushArgs 2>&1 | Out-Null
+        if ($LASTEXITCODE -eq 0) { $pushed = $true }
+    }
+    if (-not $pushed) {
+        Write-Host "!! 推送 6 次都失败了，但提交已经在本地，代码和 APK 都是好的。" -ForegroundColor Yellow
+        Write-Host "   网络恢复后执行这一句补推：" -ForegroundColor Yellow
+        Write-Host "   git -c http.proxy= -c https.proxy= push origin main" -ForegroundColor Yellow
+    } else {
+        Write-Host "==> 已推送到 GitHub" -ForegroundColor Green
+    }
 }
 Write-Host ""
 Write-Host "完成！CI 构建地址：" -ForegroundColor Green
