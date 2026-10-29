@@ -327,7 +327,7 @@ fun AppRoot() {
                     saveSettings(s, lang)
                     showSettings = false
                 },
-                onTestSound = { sound, path -> Reminders.playSound(ctx, sound, path) },
+                onTestSound = { sound, path -> Reminders.previewSound(ctx, sound, path) },
                 onBrowseWav = { cb ->
                     audioPickHost = cb
                     runCatching { audioPicker.launch(arrayOf("audio/*")) }

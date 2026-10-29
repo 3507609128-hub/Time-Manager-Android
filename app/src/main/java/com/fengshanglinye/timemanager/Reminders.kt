@@ -9,10 +9,15 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.media.AudioAttributes
+import android.media.AudioManager
 import android.media.MediaPlayer
+import android.media.Ringtone
 import android.media.RingtoneManager
+import android.media.ToneGenerator
 import android.net.Uri
 import android.os.Build
+import android.os.Handler
+import android.os.Looper
 import android.os.VibrationEffect
 import android.os.Vibrator
 import androidx.core.app.NotificationCompat
@@ -34,7 +39,9 @@ object Reminders {
     const val EXTRA_TASK_ID = "task_id"
     const val EXTRA_LEAD = "lead"
 
-    private const val CHANNEL_REMINDER = "reminder"
+    // v2：通知通道本身静音，提示音完全由 playSound() 按用户选择的音效播放。
+    // 否则通道自带的声音会和用户选的音效叠在一起（选“静音”时也还会响）。
+    private const val CHANNEL_REMINDER = "reminder_v2"
 
     /*------------------------- 通道 -------------------------*/
 
@@ -49,6 +56,7 @@ object Reminders {
             ch.description = ctx.getString(R.string.channel_reminder_desc)
             ch.enableVibration(true)
             ch.setShowBadge(true)
+            ch.setSound(null, null)
             nm.createNotificationChannel(ch)
         }
         if (nm.getNotificationChannel(ReminderService.CHANNEL_SERVICE) == null) {
@@ -190,8 +198,8 @@ object Reminders {
             .setVibrate(longArrayOf(0, 180, 90, 180))
 
         if (lead <= 5) {
-            // 马上开始：优先提醒
-            b.setDefaults(NotificationCompat.DEFAULT_ALL)
+            // 马上开始：优先提醒。只开震动，声音统一由 playSound() 负责，避免和通道声音叠音
+            b.setDefaults(NotificationCompat.DEFAULT_VIBRATE)
         }
         return b.build()
     }
@@ -222,47 +230,120 @@ object Reminders {
     }
 
     /*------------------------- 提示音 -------------------------*/
+    // 对应 Win32 的 PlayReminderSound()：静音 / 系统默认 / 五种系统音 / 自定义文件。
+    // 手机上要注意两件事：
+    //  1) 试听一律走“媒体音量”，否则手机把通知音量调到 0 时按试听完全没声音（真机反馈）；
+    //  2) 系统提示音 URI 在部分 ROM 上取不到，必须一层层回落，最差也要响一声 beep。
 
     private var player: MediaPlayer? = null
+    private var ringtone: Ringtone? = null
+    private var tone: ToneGenerator? = null
 
-    /** 对应 PlayReminderSound()：静音 / 系统默认 / 五种系统音 / 自定义文件 */
+    /** 提醒到点时播放（跟随通知音量，和系统通知保持一致） */
     fun playSound(ctx: Context, sound: Int, wavPath: String) {
+        play(ctx, sound, wavPath, preview = false)
+    }
+
+    /** 设置里的「试听」：走媒体音量，保证按下去一定能听到 */
+    fun previewSound(ctx: Context, sound: Int, wavPath: String) {
+        play(ctx, sound, wavPath, preview = true)
+    }
+
+    private fun play(ctx: Context, sound: Int, wavPath: String, preview: Boolean) {
         if (sound == SOUND_MUTE) return
+        stopSound()
+        val attrs = AudioAttributes.Builder()
+            .setUsage(if (preview) AudioAttributes.USAGE_MEDIA else AudioAttributes.USAGE_NOTIFICATION_EVENT)
+            .setContentType(
+                if (preview) AudioAttributes.CONTENT_TYPE_MUSIC else AudioAttributes.CONTENT_TYPE_SONIFICATION
+            )
+            .build()
         try {
             if (sound == SOUND_BEEP) {
-                val v = ctx.getSystemService(Context.VIBRATOR_SERVICE) as Vibrator
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                    v.vibrate(VibrationEffect.createOneShot(120, VibrationEffect.DEFAULT_AMPLITUDE))
-                } else {
-                    @Suppress("DEPRECATION")
-                    v.vibrate(120)
-                }
+                beep(preview)
                 return
             }
-            val uri: Uri = if (sound == SOUND_WAV && wavPath.isNotEmpty()) {
-                Uri.parse(if (wavPath.startsWith("/")) "file://$wavPath" else wavPath)
-            } else when (sound) {
-                SOUND_EXCLAM -> RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM)
-                SOUND_HAND -> RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION)
-                else -> RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION)
+            if (sound == SOUND_WAV) {
+                val uri = fileUri(wavPath)
+                if (uri != null && playUri(ctx, uri, attrs)) return
+                beep(preview)          // 文件被删/权限失效时至少响一声
+                return
             }
-            player?.release()
-            player = MediaPlayer().apply {
-                setAudioAttributes(
-                    AudioAttributes.Builder()
-                        .setUsage(AudioAttributes.USAGE_NOTIFICATION_EVENT)
-                        .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
-                        .build()
-                )
-                setDataSource(ctx, uri)
-                isLooping = false
-                setOnCompletionListener { p -> p.release() }
-                prepare()
-                start()
+            // 系统音：感叹号 / 手形对应闹钟音，其余对应通知音
+            val type = when (sound) {
+                SOUND_EXCLAM, SOUND_HAND -> RingtoneManager.TYPE_ALARM
+                else -> RingtoneManager.TYPE_NOTIFICATION
             }
+            var uri = RingtoneManager.getDefaultUri(type)
+            if (uri == null) uri = android.provider.Settings.System.DEFAULT_NOTIFICATION_URI
+            if (uri != null) {
+                val rt = RingtoneManager.getRingtone(ctx, uri)
+                if (rt != null) {
+                    rt.audioAttributes = attrs
+                    ringtone = rt
+                    rt.play()
+                    return
+                }
+            }
+            if (uri != null && playUri(ctx, uri, attrs)) return
+            beep(preview)
         } catch (e: Exception) {
-            // 播放失败不影响提醒本身
+            runCatching { beep(preview) }   // 播放失败不影响提醒本身，也不再完全静音
         }
+    }
+
+    private fun fileUri(path: String): Uri? {
+        if (path.isEmpty()) return null
+        return runCatching {
+            if (path.startsWith("/")) Uri.fromFile(java.io.File(path)) else Uri.parse(path)
+        }.getOrNull()
+    }
+
+    private fun playUri(ctx: Context, uri: Uri, attrs: AudioAttributes): Boolean {
+        return try {
+            val mp = MediaPlayer()
+            mp.setAudioAttributes(attrs)
+            mp.setDataSource(ctx, uri)
+            mp.setOnCompletionListener { it.release() }
+            mp.setOnErrorListener { p, _, _ -> runCatching { p.release() }; true }
+            mp.prepare()
+            mp.start()
+            player = mp
+            true
+        } catch (e: Exception) {
+            false
+        }
+    }
+
+    /** 兜底蜂鸣：系统音取不到时用它，保证「有反馈」 */
+    private fun beep(preview: Boolean) {
+        runCatching {
+            val stream = if (preview) AudioManager.STREAM_MUSIC else AudioManager.STREAM_NOTIFICATION
+            val g = ToneGenerator(stream, 90)
+            tone = g
+            g.startTone(ToneGenerator.TONE_PROP_BEEP, 220)
+            Handler(Looper.getMainLooper()).postDelayed({
+                runCatching { g.release() }
+                if (tone === g) tone = null
+            }, 520)
+        }
+    }
+
+    private fun stopSound() {
+        runCatching {
+            player?.let {
+                if (it.isPlaying) it.stop()
+                it.release()
+            }
+        }
+        player = null
+        runCatching { ringtone?.stop() }
+        ringtone = null
+        runCatching {
+            tone?.stopTone()
+            tone?.release()
+        }
+        tone = null
     }
 }
 
