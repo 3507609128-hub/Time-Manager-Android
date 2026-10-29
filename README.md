@@ -179,6 +179,19 @@ docs/                  README 使用的图标
 
 - 首次发布：月视图 / 周视图、日程增删改、每周重复、提醒规则、通知与提示音、四套主题、三语界面、`tasks.dat` / `settings.dat` 与原版互通。
 
+## 一键发布
+
+项目根目录的 `release.ps1` 会一次性完成：升版本号 → 跑单元测试 → 打包 APK → 拷贝到 `dist\` → 提交并推送。
+
+```powershell
+cd $env:USERPROFILE\Desktop\Time-Manager-Android
+.\release.ps1 -Version 1.0.4 -Message "1.0.4：修复 XXX"
+```
+
+- `versionCode` 自动 +1，不用手动改
+- 推送默认绕过本机 git 全局代理（`http://127.0.0.1:12000`，代理没开时直连 github）
+- 脚本带 UTF-8 BOM，Windows PowerShell 5.1 与 PowerShell 7 都能正确显示中文
+
 ## 制作人员
 
 - 原作者：枫殇林叶（Windows 版 `Time-Maneger`）
