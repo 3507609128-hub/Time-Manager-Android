@@ -5,6 +5,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -31,6 +32,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -38,6 +40,20 @@ import androidx.compose.ui.unit.sp
 import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.LocalTime
+
+/**
+ * 基本信息区左侧标签宽度。桌面版是 76dp，手机上太宽会把日期框挤成「2026/…」，
+ * 这里收到 50dp（标签都是 2–3 个汉字，右对齐后依然整齐）。
+ */
+private val LBL_W = 50.dp
+
+internal const val TAG_ADD_START_DATE = "add_start_date"
+internal const val TAG_ADD_START_TIME = "add_start_time"
+internal const val TAG_ADD_END_DATE = "add_end_date"
+internal const val TAG_ADD_END_TIME = "add_end_time"
+internal const val TAG_ADD_CAT = "add_cat"
+internal const val TAG_ADD_REPEAT = "add_repeat"
+internal const val TAG_ADD_RULE_ROW = "add_rule_row"
 
 /**
  * 添加 / 编辑日程对话框（对应 main.cpp 的 DialogAdd 及其子控件）。
@@ -142,46 +158,30 @@ fun AddTaskDialog(
                 .fillMaxWidth()
                 .weight(1f)
                 .verticalScroll(rememberScrollState())
-                .padding(16.dp)
+                .padding(horizontal = 12.dp, vertical = 14.dp)
         ) {
             /*------------------------- 基本信息 -------------------------*/
             DialogCard(t) {
                 SectionTitle(S(Str.ADD_SEC_BASE), t)
                 Spacer(Modifier.height(12.dp))
 
-                // 开始 / 结束：日期 + 时间
-                FormRow(S(Str.LBL_START), t) {
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Box(Modifier.weight(1f)) {
-                            FieldBox(t, fmtDate(start.toLocalDate()), Modifier.fillMaxWidth()) {
-                                showStartSheet = true
-                            }
-                        }
-                        Box(Modifier.width(96.dp)) {
-                            FieldBox(t, fmtTime(start.toLocalTime()), Modifier.fillMaxWidth()) {
-                                showStartSheet = true
-                            }
-                        }
-                    }
-                }
+                // 开始 / 结束：日期 + 时间（窄屏自动折行，保证日期完整显示）
+                DateTimeRow(
+                    label = S(Str.LBL_START), t = t,
+                    dateText = fmtDate(start.toLocalDate()),
+                    timeText = fmtTime(start.toLocalTime()),
+                    dateTag = TAG_ADD_START_DATE, timeTag = TAG_ADD_START_TIME
+                ) { showStartSheet = true }
                 Spacer(Modifier.height(10.dp))
-                FormRow(S(Str.LBL_END), t) {
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Box(Modifier.weight(1f)) {
-                            FieldBox(t, fmtDate(end.toLocalDate()), Modifier.fillMaxWidth()) {
-                                showEndSheet = true
-                            }
-                        }
-                        Box(Modifier.width(96.dp)) {
-                            FieldBox(t, fmtTime(end.toLocalTime()), Modifier.fillMaxWidth()) {
-                                showEndSheet = true
-                            }
-                        }
-                    }
-                }
+                DateTimeRow(
+                    label = S(Str.LBL_END), t = t,
+                    dateText = fmtDate(end.toLocalDate()),
+                    timeText = fmtTime(end.toLocalTime()),
+                    dateTag = TAG_ADD_END_DATE, timeTag = TAG_ADD_END_TIME
+                ) { showEndSheet = true }
 
                 Spacer(Modifier.height(10.dp))
-                FormRow(S(Str.LBL_TITLE), t) {
+                FormRow(S(Str.LBL_TITLE), t, labelWidth = LBL_W) {
                     TextFieldBox(
                         value = title, t = t, singleLine = true,
                         hint = "", maxLen = MAX_TITLE,
@@ -190,46 +190,40 @@ fun AddTaskDialog(
                 }
 
                 Spacer(Modifier.height(10.dp))
-                FormRow(S(Str.LBL_CAT), t) {
-                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        Box(Modifier.weight(1f)) {
-                            Row(
-                                Modifier
-                                    .fillMaxWidth()
-                                    .height(38.dp)
-                                    .clip(RoundedCornerShape(4.dp))
-                                    .background(t.card)
-                                    .clickable { showCatSheet = true }
-                                    .padding(horizontal = 10.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Dot(Categories.fill(category), 3.dp)
-                                Spacer(Modifier.width(7.dp))
-                                Txt(catName(category), t.text, 13.sp, modifier = Modifier.weight(1f))
-                                Chevron(1, t.muted, 14.dp)
-                            }
-                        }
-                        if (editing == null) {
-                            Spacer(Modifier.width(0.dp))
-                            Box(Modifier.width(54.dp)) {
-                                Txt(
-                                    S(Str.LBL_REPEAT), t.text, 13.sp,
-                                    modifier = Modifier.align(Alignment.CenterEnd)
-                                )
-                            }
-                            Box(Modifier.width(122.dp)) {
-                                FakeDropdown(
-                                    if (repeatWeeks <= 1) S(Str.REPEAT_ONCE)
-                                    else S(Str.REPEAT_WEEKS).format(repeatWeeks),
-                                    t
-                                ) { showRepeatSheet = true }
-                            }
+                FormRow(S(Str.LBL_CAT), t, labelWidth = LBL_W) {
+                    Row(
+                        Modifier
+                            .fillMaxWidth()
+                            .height(38.dp)
+                            .clip(RoundedCornerShape(4.dp))
+                            .background(t.card)
+                            .clickable { showCatSheet = true }
+                            .testTag(TAG_ADD_CAT)
+                            .padding(start = 8.dp, end = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Dot(Categories.fill(category), 3.dp)
+                        Spacer(Modifier.width(7.dp))
+                        Txt(catName(category), t.text, 13.sp, modifier = Modifier.weight(1f))
+                        Chevron(1, t.muted, 14.dp)
+                    }
+                }
+
+                if (editing == null) {
+                    Spacer(Modifier.height(10.dp))
+                    FormRow(S(Str.LBL_REPEAT), t, labelWidth = LBL_W) {
+                        Box(Modifier.testTag(TAG_ADD_REPEAT)) {
+                            FakeDropdown(
+                                if (repeatWeeks <= 1) S(Str.REPEAT_ONCE)
+                                else S(Str.REPEAT_WEEKS).format(repeatWeeks),
+                                t
+                            ) { showRepeatSheet = true }
                         }
                     }
                 }
 
                 Spacer(Modifier.height(10.dp))
-                FormRow(S(Str.LBL_NOTE), t) {
+                FormRow(S(Str.LBL_NOTE), t, labelWidth = LBL_W) {
                     TextFieldBox(
                         value = note, t = t, singleLine = false,
                         hint = "", maxLen = MAX_NOTE,
@@ -283,32 +277,56 @@ fun AddTaskDialog(
                 }
 
                 Spacer(Modifier.height(10.dp))
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Box(Modifier.width(64.dp)) {
-                        TextFieldBox(
-                            value = ruleAmount, t = t, singleLine = true,
-                            hint = "", maxLen = 4,
-                            modifier = Modifier.fillMaxWidth()
-                        ) { v -> ruleAmount = v.filter { it.isDigit() } }
+                BoxWithConstraints(Modifier.fillMaxWidth().testTag(TAG_ADD_RULE_ROW)) {
+                    val unitBox: @Composable () -> Unit = {
+                        Box(Modifier.width(88.dp)) {
+                            FakeDropdown(
+                                when (ruleUnit) {
+                                    1 -> S(Str.UNIT_HOUR)
+                                    2 -> S(Str.UNIT_DAY)
+                                    else -> S(Str.UNIT_MIN)
+                                }, t
+                            ) { showUnitSheet = true }
+                        }
                     }
-                    Spacer(Modifier.width(8.dp))
-                    Box(Modifier.width(96.dp)) {
-                        FakeDropdown(
-                            when (ruleUnit) {
-                                1 -> S(Str.UNIT_HOUR)
-                                2 -> S(Str.UNIT_DAY)
-                                else -> S(Str.UNIT_MIN)
-                            }, t
-                        ) { showUnitSheet = true }
+                    val amountBox: @Composable () -> Unit = {
+                        Box(Modifier.width(56.dp)) {
+                            TextFieldBox(
+                                value = ruleAmount, t = t, singleLine = true,
+                                hint = "", maxLen = 4,
+                                modifier = Modifier.fillMaxWidth()
+                            ) { v -> ruleAmount = v.filter { it.isDigit() } }
+                        }
                     }
-                    Spacer(Modifier.width(8.dp))
-                    OutlineButton(S(Str.RULE_ADD), t, onClick = { addRule() })
-                    Spacer(Modifier.width(8.dp))
-                    OutlineButton(S(Str.RULE_DEL), t) {
-                        if (ruleSel < 0) onMessage(S(Str.ERR_RULE_SEL))
-                        else {
-                            rules.removeAt(ruleSel)
-                            ruleSel = -1
+                    val addBtn: @Composable () -> Unit = {
+                        OutlineButton(S(Str.RULE_ADD), t, onClick = { addRule() })
+                    }
+                    val delBtn: @Composable () -> Unit = {
+                        OutlineButton(S(Str.RULE_DEL), t) {
+                            if (ruleSel < 0) onMessage(S(Str.ERR_RULE_SEL))
+                            else {
+                                rules.removeAt(ruleSel)
+                                ruleSel = -1
+                            }
+                        }
+                    }
+                    if (maxWidth >= 300.dp) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            amountBox(); Spacer(Modifier.width(8.dp))
+                            unitBox(); Spacer(Modifier.width(8.dp))
+                            addBtn(); Spacer(Modifier.width(8.dp))
+                            delBtn()
+                        }
+                    } else {
+                        // 手机竖屏：分两行，避免按钮被挤出屏幕
+                        Column {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                amountBox(); Spacer(Modifier.width(8.dp))
+                                unitBox(); Spacer(Modifier.width(8.dp))
+                                addBtn()
+                            }
+                            Spacer(Modifier.height(8.dp))
+                            Row(verticalAlignment = Alignment.CenterVertically) { delBtn() }
                         }
                     }
                 }
@@ -437,23 +455,72 @@ fun DialogCard(t: Theme, content: @Composable () -> Unit) {
             .fillMaxWidth()
             .clip(RoundedCornerShape(6.dp))
             .background(t.card)
-    ) { Column(Modifier.padding(14.dp)) { content() } }
+    ) { Column(Modifier.padding(12.dp)) { content() } }
 }
 
 /** 只读输入框外观（日期 / 时间） */
 @Composable
-fun FieldBox(t: Theme, text: String, modifier: Modifier = Modifier, onClick: () -> Unit) {
+fun FieldBox(
+    t: Theme,
+    text: String,
+    modifier: Modifier = Modifier,
+    fontSize: androidx.compose.ui.unit.TextUnit = 13.sp,
+    onClick: () -> Unit
+) {
     Row(
         modifier
             .height(38.dp)
             .clip(RoundedCornerShape(4.dp))
             .background(t.card)
             .clickable { onClick() }
-            .padding(horizontal = 10.dp),
+            .padding(start = 8.dp, end = 6.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Txt(text, t.text, 13.sp, modifier = Modifier.weight(1f))
-        Chevron(1, t.muted, 13.dp)
+        Txt(text, t.text, fontSize, modifier = Modifier.weight(1f))
+        Chevron(1, t.muted, 11.dp)
+    }
+}
+
+/**
+ * 「开始 / 结束」行：宽屏与桌面版一致排成 [日期] [时间]，
+ * 内容区宽度不足 225dp 时自动折成上下两行，让日期永远能完整显示
+ *（真机 320dp 宽、或系统字体放大时尤其重要）。
+ */
+@Composable
+private fun DateTimeRow(
+    label: String,
+    t: Theme,
+    dateText: String,
+    timeText: String,
+    dateTag: String,
+    timeTag: String,
+    onPick: () -> Unit
+) {
+    FormRow(label, t, labelWidth = LBL_W) {
+        BoxWithConstraints(Modifier.fillMaxWidth()) {
+            if (maxWidth >= 225.dp) {
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Box(Modifier.weight(1f)) {
+                        FieldBox(
+                            t, dateText,
+                            Modifier.fillMaxWidth().testTag(dateTag)
+                        ) { onPick() }
+                    }
+                    Box(Modifier.width(74.dp)) {
+                        FieldBox(
+                            t, timeText,
+                            Modifier.fillMaxWidth().testTag(timeTag)
+                        ) { onPick() }
+                    }
+                }
+            } else {
+                Column {
+                    FieldBox(t, dateText, Modifier.fillMaxWidth().testTag(dateTag)) { onPick() }
+                    Spacer(Modifier.height(6.dp))
+                    FieldBox(t, timeText, Modifier.fillMaxWidth().testTag(timeTag)) { onPick() }
+                }
+            }
+        }
     }
 }
 

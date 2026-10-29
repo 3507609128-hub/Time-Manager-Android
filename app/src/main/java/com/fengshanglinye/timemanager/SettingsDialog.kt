@@ -4,6 +4,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -77,7 +78,7 @@ fun SettingsDialog(
                 .fillMaxWidth()
                 .weight(1f)
                 .verticalScroll(rememberScrollState())
-                .padding(16.dp)
+                .padding(horizontal = 12.dp, vertical = 14.dp)
         ) {
             DialogCard(t) {
                 SectionTitle(S(Str.SET_SEC_APPEAR), t)
@@ -137,14 +138,29 @@ fun SettingsDialog(
                 Spacer(Modifier.height(10.dp))
 
                 FormRow(S(Str.SET_SOUND), t) {
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Box(Modifier.weight(1f)) {
+                    BoxWithConstraints(Modifier.fillMaxWidth()) {
+                        val testBtn: @Composable () -> Unit = {
+                            OutlineButton(S(Str.SET_TEST), t) {
+                                if (sound == SOUND_MUTE) onMessage(S(Str.SET_TEST_MUTE))
+                                else if (sound == SOUND_WAV && wavPath.isEmpty()) onMessage(S(Str.SET_TEST_NO_WAV))
+                                else onTestSound(sound, wavPath)
+                            }
+                        }
+                        val dropdown: @Composable () -> Unit = {
                             FakeDropdown(soundName(sound), t) { showSoundSheet = true }
                         }
-                        OutlineButton(S(Str.SET_TEST), t) {
-                            if (sound == SOUND_MUTE) onMessage(S(Str.SET_TEST_MUTE))
-                            else if (sound == SOUND_WAV && wavPath.isEmpty()) onMessage(S(Str.SET_TEST_NO_WAV))
-                            else onTestSound(sound, wavPath)
+                        // 手机竖屏时「试听」放到下一行，避免提示音名称被截断
+                        if (maxWidth >= 240.dp) {
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Box(Modifier.weight(1f)) { dropdown() }
+                                testBtn()
+                            }
+                        } else {
+                            Column {
+                                dropdown()
+                                Spacer(Modifier.height(8.dp))
+                                testBtn()
+                            }
                         }
                     }
                 }
