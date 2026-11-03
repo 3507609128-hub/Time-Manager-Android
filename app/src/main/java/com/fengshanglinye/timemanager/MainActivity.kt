@@ -39,6 +39,8 @@ var pendingOpenTask by mutableStateOf(0)
 
 class MainActivity : ComponentActivity() {
 
+    private val mainHandler = android.os.Handler(android.os.Looper.getMainLooper())
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val tasks = Store.loadTasks(this)
@@ -50,10 +52,64 @@ class MainActivity : ComponentActivity() {
         Reminders.rescheduleAll(this, tasks)
         if (settings.autostart) ReminderService.start(this)
 
+        startSync()
+
         handleIntent(intent)
         requestNotifications()
 
         setContent { AppRoot() }
+    }
+
+    /**
+     * 启动双端同步引擎：与互联软件使用同一套配对码与合并规则，
+     * 直接读写本应用的 tasks.dat / settings.dat。
+     */
+    private fun startSync() {
+        SyncUi.code = Sync.getCode()
+        SyncUi.devId = Sync.getDevId()
+        Sync.start(
+            filesDir,
+            { msg -> mainHandler.post { SyncUi.addLog(msg) } },
+            { st ->
+                mainHandler.post {
+                    SyncUi.status = st
+                    if (st == Sync.ST_ONLINE) SyncUi.addLog(S(Str.SYNC_ONLINE))
+                }
+            },
+            { tCount, sCount ->
+                mainHandler.post {
+                    SyncUi.tasksApplied += tCount
+                    SyncUi.settingsApplied += sCount
+                    reloadFromDisk(tCount > 0, sCount > 0)
+                }
+            }
+        )
+        SyncUi.enabled = Sync.isEnabled()
+        if (SyncUi.code.isEmpty()) {
+            SyncUi.code = Sync.newCode()
+            SyncUi.addLog(S(Str.SYNC_NEWCODE).format(SyncUi.code))
+        }
+    }
+
+    /** 远端数据落盘后，把新的任务/设置读回内存并刷新界面与提醒。 */
+    private fun reloadFromDisk(tasksChanged: Boolean, settingsChanged: Boolean) {
+        if (tasksChanged) {
+            val list = Store.loadTasks(this)
+            AppState.setTasks(list)
+            Reminders.rescheduleAll(this, list)
+            SyncUi.addLog(S(Str.SYNC_REMOTE_TASKS))
+        }
+        if (settingsChanged) {
+            val (s, lang) = Store.loadSettings(this)
+            AppState.setSettings(s, lang)
+            Reminders.rescheduleAll(this, AppState.tasks)
+            SyncUi.addLog(S(Str.SYNC_REMOTE_SET))
+        }
+    }
+
+    override fun onDestroy() {
+        Sync.stop()
+        super.onDestroy()
     }
 
     override fun onNewIntent(intent: Intent) {

@@ -69,6 +69,7 @@ fun SettingsDialog(
     var showThemeSheet by remember { mutableStateOf(false) }
     var showDurSheet by remember { mutableStateOf(false) }
     var showSoundSheet by remember { mutableStateOf(false) }
+    var showSync by remember { mutableStateOf(false) }
 
     BaseDialog(t, { onCancel() }) {
         DialogHeader(S(Str.SET_TITLE), t) { onCancel() }
@@ -191,6 +192,14 @@ fun SettingsDialog(
                 HintText(S(Str.SET_HINT), t)
             }
 
+            Spacer(Modifier.height(14.dp))
+            Hairline(t)
+            Spacer(Modifier.height(14.dp))
+
+            DialogCard(t) {
+                SyncSection(t) { showSync = true }
+            }
+
             Spacer(Modifier.height(16.dp))
             Hairline(t)
             Spacer(Modifier.height(12.dp))
@@ -269,6 +278,9 @@ fun SettingsDialog(
             onDismiss = { showSoundSheet = false },
             onPick = { i -> sound = i; showSoundSheet = false }
         )
+    }
+    if (showSync) {
+        SyncPanel(t) { showSync = false }
     }
 }
 

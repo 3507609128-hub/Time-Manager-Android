@@ -14,8 +14,8 @@ android {
         applicationId = "com.fengshanglinye.timemanager"
         minSdk = 24
         targetSdk = 34
-        versionCode = 7
-        versionName = "1.0.5"
+        versionCode = 8
+        versionName = "1.0.6"
     }
 
     buildTypes {
@@ -59,6 +59,7 @@ dependencies {
     implementation("androidx.activity:activity-compose:1.9.3")
     implementation("androidx.compose.ui:ui:1.7.6")
     implementation("androidx.compose.foundation:foundation:1.7.6")
+    implementation("com.google.zxing:core:3.5.3")
 
     testImplementation("junit:junit:4.13.2")
     // 在宿主机 JVM 上跑 Compose 布局测试，用于没有真机/模拟器时验证界面尺寸
