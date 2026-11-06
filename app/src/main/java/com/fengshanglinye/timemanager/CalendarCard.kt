@@ -60,6 +60,10 @@ fun CalendarCard(
     selected: LocalDate?,
     /** 竖屏模式传入固定格子高度；为 null 时沿用双栏的“撑满可用高度”行为 */
     cellHeight: Dp? = null,
+    /** 只画内容、不套卡片外观（周视图里与外层时间表合成同一张卡片时用） */
+    bare: Boolean = false,
+    /** 是否显示底部的「今日提示 + 开机自启」；周视图整页里省掉，给时间表腾空间 */
+    showFooter: Boolean = true,
     onPrevMonth: () -> Unit,
     onNextMonth: () -> Unit,
     onPickDate: (LocalDate) -> Unit,
@@ -85,10 +89,10 @@ fun CalendarCard(
         ) { _, dx -> dragAcc += dx }
     }
 
-    Card(t, modifier.testTag(TAG_CALENDAR_CARD)) {
+    val body: @Composable () -> Unit = {
         // cellHeight != null → 竖屏模式：卡片按内容高度排版（日历在上、日程表在下）
         // cellHeight == null → 双栏模式：日历撑满可用高度（与原版桌面一致）
-        Column(if (cellHeight == null) Modifier.fillMaxSize() else Modifier.fillMaxWidth()) {
+        Column(if (cellHeight == null && !bare) Modifier.fillMaxSize() else Modifier.fillMaxWidth()) {
 
             /*-------------------- 月份标题行 --------------------*/
             Row(
@@ -153,22 +157,31 @@ fun CalendarCard(
             }
 
             /*-------------------- 今日提示 + 开机自启 --------------------*/
-            Column(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 10.dp)) {
-                val cnt = AppState.countOnDate(today)
-                Txt(S(Str.STAT_TODAY).format(fmtDateShort(today), cnt), t.muted, 12.sp)
-                Spacer(Modifier.height(10.dp))
-                Row(
-                    Modifier.fillMaxWidth().clickable {
-                        onToggleAutostart(!AppState.settings.autostart)
-                    },
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    CheckBox(AppState.settings.autostart, t, 17.dp)
-                    Spacer(Modifier.width(8.dp))
-                    Txt(S(Str.SET_AUTOSTART), t.text, 12.sp)
+            if (showFooter) {
+                Column(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 10.dp)) {
+                    val cnt = AppState.countOnDate(today)
+                    Txt(S(Str.STAT_TODAY).format(fmtDateShort(today), cnt), t.muted, 12.sp)
+                    Spacer(Modifier.height(10.dp))
+                    Row(
+                        Modifier.fillMaxWidth().clickable {
+                            onToggleAutostart(!AppState.settings.autostart)
+                        },
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        CheckBox(AppState.settings.autostart, t, 17.dp)
+                        Spacer(Modifier.width(8.dp))
+                        Txt(S(Str.SET_AUTOSTART), t.text, 12.sp)
+                    }
                 }
             }
         }
+    }
+
+    if (bare) {
+        // 周视图整页：不套卡片，交给外层卡片统一包边
+        Box(modifier.testTag(TAG_CALENDAR_CARD)) { body() }
+    } else {
+        Card(t, modifier.testTag(TAG_CALENDAR_CARD)) { body() }
     }
 }
 

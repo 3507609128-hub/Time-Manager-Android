@@ -146,6 +146,8 @@ fun AppRoot() {
     var showAdd by remember { mutableStateOf(false) }
     var editing by remember { mutableStateOf<Task?>(null) }
     var showSettings by remember { mutableStateOf(false) }
+    /** 双周视图里双击某个日程块 → 打开的详情卡片 */
+    var detailTask by remember { mutableStateOf<Task?>(null) }
     var message by remember { mutableStateOf<String?>(null) }
     var confirmDelete by remember { mutableStateOf(false) }
     val toasts = remember { mutableStateListOf<ToastItem>() }
@@ -293,13 +295,40 @@ fun AppRoot() {
                         if (isMonth) {
                             agenda(Modifier.weight(1f).fillMaxHeight())
                         } else {
-                            WeekGrid(t = theme, modifier = Modifier.weight(1f).fillMaxHeight())
+                            WeekGrid(
+                                t = theme,
+                                modifier = Modifier.weight(1f).fillMaxHeight(),
+                                onShowDetail = { detailTask = it }
+                            )
                         }
                     }
+                } else if (!isMonth) {
+                    // 手机竖屏周视图：日历 + 时间表合成**一个界面**，整页上下滑动
+                    Box(
+                        Modifier
+                            .fillMaxWidth()
+                            .weight(1f)
+                            .padding(horizontal = 12.dp)
+                    ) {
+                        WeekScreen(
+                            t = theme,
+                            modifier = Modifier.fillMaxSize(),
+                            year = AppState.calYear,
+                            month = AppState.calMonth,
+                            selected = AppState.filterDate,
+                            onPrevMonth = { shiftMonth(-1) },
+                            onNextMonth = { shiftMonth(1) },
+                            onPickDate = { pickDate(it) },
+                            onToggleAutostart = { on ->
+                                saveSettings(
+                                    AppState.settings.copy(autostart = on), AppState.lang
+                                )
+                            },
+                            onShowDetail = { detailTask = it }
+                        )
+                    }
                 } else {
-                    // 手机竖屏：两种视图都是「日历在上、内容在下」
-                    //  · 月视图 → 下面放日程表
-                    //  · 周视图 → 下面放时间表（用户要求与月视图一致）
+                    // 手机竖屏月视图：日历在上、日程表在下
                     BoxWithConstraints(Modifier.fillMaxWidth().padding(horizontal = 12.dp)) {
                         // 格子按屏幕宽度算成接近正方形，整张卡片由内容决定高度，
                         // 这样竖屏下日历不会把整屏吃光，下面的内容才有空间显示。
@@ -355,6 +384,19 @@ fun AppRoot() {
         }
 
         /*--------- 对话框 ---------*/
+        detailTask?.let { dt ->
+            TaskDetailDialog(
+                t = theme,
+                task = dt,
+                onClose = { detailTask = null },
+                onEdit = {
+                    detailTask = null
+                    editing = dt
+                    showAdd = true
+                }
+            )
+        }
+
         if (showAdd) {
             AddTaskDialog(
                 t = theme,

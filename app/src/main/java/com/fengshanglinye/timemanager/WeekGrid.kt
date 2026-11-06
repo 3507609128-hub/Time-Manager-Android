@@ -1,8 +1,9 @@
 package com.fengshanglinye.timemanager
 
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
@@ -29,8 +30,8 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
@@ -49,14 +50,19 @@ import kotlin.math.max
  *  • 重叠日程自动横向分列（最多 4 列）
  *  • 当前时间：橙色细线 + 左端圆点
  *
- * 滚动用 verticalScroll 实现：内容是一个固定 24 小时高度的 Box，
- * 放在可滚动容器里才不会被视口高度压扁（否则只能看到 0:00–7:00 且无法滚动）。
+ * 两种用法：
+ *  • embedded = false（默认）：自带卡片与内部滚动，滚动到 7:00 开始。桌面双栏 / 测试用。
+ *  • embedded = true：不自带卡片、不自带滚动，直接铺开完整的 24 小时高度，
+ *    交给外层 [WeekScreen] 的滚动容器统一滚动（手机竖屏「日历 + 时间表」同屏）。
  */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun WeekGrid(
     t: Theme,
     modifier: Modifier = Modifier,
-    hourHeight: Dp = 60.dp
+    hourHeight: Dp = 60.dp,
+    embedded: Boolean = false,
+    onShowDetail: (Task) -> Unit = {}
 ) {
     val anchor = AppState.weekAnchor
     val monday = mondayOf(anchor)
@@ -72,15 +78,16 @@ fun WeekGrid(
     val initialScroll = with(density) { (hourHeight * 7).roundToPx() }
     val scrollState = rememberScrollState(initial = initialScroll)
 
-    Card(t, modifier) {
-        BoxWithConstraints(Modifier.fillMaxSize()) {
+    @Composable
+    fun Table(m: Modifier) {
+        BoxWithConstraints(m) {
             // 手机竖屏列宽很窄（约 40dp），时间轴和字号都要收一点
             val axisW = if (maxWidth < 400.dp) 44.dp else 54.dp
             val colW = (maxWidth - axisW) / 7
             val narrow = colW < 50.dp
             val blocks = remember(anchor, AppState.tasks.toList()) { buildWeekBlocks(monday) }
 
-            Column(Modifier.fillMaxSize()) {
+            Column(if (embedded) Modifier.fillMaxWidth() else Modifier.fillMaxSize()) {
 
                 /*-------------------- 表头 --------------------*/
                 Row(Modifier.fillMaxWidth().height(headerH)) {
@@ -98,7 +105,7 @@ fun WeekGrid(
                             Row(
                                 Modifier
                                     .clip(RoundedCornerShape(6.dp))
-                                    .let { m -> if (isToday) m.background(t.accent) else m }
+                                    .let { m2 -> if (isToday) m2.background(t.accent) else m2 }
                                     .padding(horizontal = if (narrow) 3.dp else 7.dp, vertical = 2.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
@@ -126,187 +133,266 @@ fun WeekGrid(
                     }
                 }
 
-                /*-------------------- 主体（可滚动） --------------------*/
-                Box(
-                    Modifier
-                        .fillMaxWidth()
-                        .weight(1f)
-                        .clipToBounds()
-                ) {
-                    Column(
+                /*-------------------- 24 小时内容 --------------------*/
+                @Composable
+                fun Content() {
+                    Box(
                         Modifier
-                            .fillMaxSize()
-                            .verticalScroll(scrollState)
-                            .testTag(TAG_WEEK_SCROLL)
+                            .fillMaxWidth()
+                            .height(contentH)
+                            .testTag(TAG_WEEK_CONTENT)
                     ) {
-                        Box(
-                            Modifier
-                                .fillMaxWidth()
-                                .height(contentH)
-                                .testTag(TAG_WEEK_CONTENT)
-                        ) {
 
-                            Row(Modifier.fillMaxSize()) {
+                        Row(Modifier.fillMaxSize()) {
 
-                                /* 时间轴 */
-                                Column(Modifier.width(axisW).fillMaxHeight()) {
-                                    for (hh in 0 until 24) {
-                                        Box(Modifier.fillMaxWidth().height(hourHeight)) {
-                                            Txt(
-                                                "%02d:00".format(hh), t.muted,
-                                                (if (narrow) 9 else 11).sp,
-                                                align = TextAlign.End,
-                                                modifier = Modifier
-                                                    .align(Alignment.TopEnd)
-                                                    .offset(y = (-5).dp)
-                                                    .padding(end = 4.dp)
-                                            )
-                                        }
+                            /* 时间轴 */
+                            Column(Modifier.width(axisW).fillMaxHeight()) {
+                                for (hh in 0 until 24) {
+                                    Box(Modifier.fillMaxWidth().height(hourHeight)) {
+                                        Txt(
+                                            "%02d:00".format(hh), t.muted,
+                                            (if (narrow) 9 else 11).sp,
+                                            align = TextAlign.End,
+                                            modifier = Modifier
+                                                .align(Alignment.TopEnd)
+                                                .offset(y = (-5).dp)
+                                                .padding(end = 4.dp)
+                                        )
                                     }
                                 }
+                            }
 
-                                /* 7 个日期列 */
-                                for (i in 0 until 7) {
-                                    val d = monday.plusDays(i.toLong())
-                                    val isToday = d == today
-                                    val isWeekend = i >= 5
-                                    val colBlocks = blocks.filter { it.col == i }
-                                    Box(
-                                        Modifier
-                                            .width(colW)
-                                            .fillMaxHeight()
-                                            .testTag(TAG_WEEK_COL + i)
-                                            .background(
-                                                if (isToday) t.todayBg
-                                                else if (isWeekend) t.weekendBg
-                                                else t.card
-                                            )
-                                    ) {
-                                        Canvas(Modifier.fillMaxSize()) {
-                                            val pxH = hourHeight.toPx()
-                                            // 夜间时段：0–7 点与 22–24 点
-                                            drawRect(t.nightBg, Offset.Zero, Size(size.width, 7 * pxH))
-                                            drawRect(
-                                                t.nightBg, Offset(0f, 22 * pxH),
-                                                Size(size.width, size.height - 22 * pxH)
-                                            )
-                                            // 小时线
-                                            for (hh in 0..24) {
-                                                val y = hh * pxH
-                                                drawLine(
-                                                    t.line, Offset(0f, y),
-                                                    Offset(size.width, y), 1f
-                                                )
-                                            }
-                                            // 竖线
+                            /* 7 个日期列 */
+                            for (i in 0 until 7) {
+                                val d = monday.plusDays(i.toLong())
+                                val isToday = d == today
+                                val isWeekend = i >= 5
+                                val colBlocks = blocks.filter { it.col == i }
+                                Box(
+                                    Modifier
+                                        .width(colW)
+                                        .fillMaxHeight()
+                                        .testTag(TAG_WEEK_COL + i)
+                                        .background(
+                                            if (isToday) t.todayBg
+                                            else if (isWeekend) t.weekendBg
+                                            else t.card
+                                        )
+                                ) {
+                                    Canvas(Modifier.fillMaxSize()) {
+                                        val pxH = hourHeight.toPx()
+                                        // 夜间时段：0–7 点与 22–24 点
+                                        drawRect(t.nightBg, Offset.Zero, Size(size.width, 7 * pxH))
+                                        drawRect(
+                                            t.nightBg, Offset(0f, 22 * pxH),
+                                            Size(size.width, size.height - 22 * pxH)
+                                        )
+                                        // 小时线
+                                        for (hh in 0..24) {
+                                            val y = hh * pxH
                                             drawLine(
-                                                t.line, Offset(0f, 0f),
-                                                Offset(0f, size.height), 1f
-                                            )
-                                            drawLine(
-                                                t.line, Offset(size.width - 0.5f, 0f),
-                                                Offset(size.width - 0.5f, size.height), 1f
+                                                t.line, Offset(0f, y),
+                                                Offset(size.width, y), 1f
                                             )
                                         }
+                                        // 竖线
+                                        drawLine(
+                                            t.line, Offset(0f, 0f),
+                                            Offset(0f, size.height), 1f
+                                        )
+                                        drawLine(
+                                            t.line, Offset(size.width - 0.5f, 0f),
+                                            Offset(size.width - 0.5f, size.height), 1f
+                                        )
+                                    }
 
-                                        /* 日程块 */
-                                        for (b in colBlocks) {
-                                            val lanes = b.lanes.coerceIn(1, 4)
-                                            val laneW = colW / lanes
-                                            val topDp =
-                                                (b.startMin / 60f * hourHeight.value).dp
-                                            val heightDp = max(
-                                                22f,
-                                                (b.endMin - b.startMin) / 60f * hourHeight.value
-                                            ).dp
-                                            val selected = AppState.weekSelId == b.task.id
-                                            Box(
-                                                Modifier
-                                                    .testTag(TAG_WEEK_BLOCK + b.task.id)
-                                                    .offset(x = laneW * b.lane, y = topDp)
-                                                    .width(if (lanes == 1) colW - 3.dp else laneW - 2.dp)
-                                                    .height(heightDp)
-                                                    .clip(RoundedCornerShape(4.dp))
-                                                    .background(Categories.fill(b.task.category))
-                                                    .clickable {
+                                    /* 日程块 */
+                                    for (b in colBlocks) {
+                                        val lanes = b.lanes.coerceIn(1, 4)
+                                        val laneW = colW / lanes
+                                        val topDp = (b.startMin / 60f * hourHeight.value).dp
+                                        val heightDp = max(
+                                            22f,
+                                            (b.endMin - b.startMin) / 60f * hourHeight.value
+                                        ).dp
+                                        val selected = AppState.weekSelId == b.task.id
+                                        Box(
+                                            Modifier
+                                                .testTag(TAG_WEEK_BLOCK + b.task.id)
+                                                .offset(x = laneW * b.lane, y = topDp)
+                                                .width(
+                                                    if (lanes == 1) colW - 3.dp else laneW - 2.dp
+                                                )
+                                                .height(heightDp)
+                                                .clip(RoundedCornerShape(4.dp))
+                                                .background(Categories.fill(b.task.category))
+                                                // 单击选中，双击查看详细信息
+                                                .combinedClickable(
+                                                    onClick = {
                                                         if (selected) {
                                                             AppState.weekSelId = 0
                                                         } else {
                                                             AppState.weekSelId = b.task.id
-                                                            AppState.selectedIds =
-                                                                setOf(b.task.id)
+                                                            AppState.selectedIds = setOf(b.task.id)
                                                         }
-                                                    }
-                                            ) {
-                                                if (selected) {
-                                                    Canvas(Modifier.fillMaxSize()) {
-                                                        drawRoundRect(
-                                                            t.accent, Offset.Zero, size,
-                                                            CornerRadius(4.dp.toPx()),
-                                                            style = Stroke(2.dp.toPx())
-                                                        )
-                                                    }
+                                                    },
+                                                    onDoubleClick = { onShowDetail(b.task) }
+                                                )
+                                        ) {
+                                            if (selected) {
+                                                Canvas(Modifier.fillMaxSize()) {
+                                                    drawRoundRect(
+                                                        t.accent, Offset.Zero, size,
+                                                        CornerRadius(4.dp.toPx()),
+                                                        style = Stroke(2.dp.toPx())
+                                                    )
                                                 }
-                                                Column(
-                                                    Modifier.padding(
-                                                        horizontal = if (narrow) 3.dp else 5.dp,
-                                                        vertical = 2.dp
-                                                    )
-                                                ) {
+                                            }
+                                            Column(
+                                                Modifier.padding(
+                                                    horizontal = if (narrow) 3.dp else 5.dp,
+                                                    vertical = 2.dp
+                                                )
+                                            ) {
+                                                Txt(
+                                                    b.task.title, Color.White,
+                                                    (if (narrow) 10 else 11).sp,
+                                                    FontWeight.Bold,
+                                                    maxLines = if (heightDp.value < 32f) 1 else 2
+                                                )
+                                                if (heightDp.value >= 44f) {
                                                     Txt(
-                                                        b.task.title, Color.White,
-                                                        (if (narrow) 10 else 11).sp,
-                                                        FontWeight.Bold,
-                                                        maxLines = if (heightDp.value < 32f) 1 else 2
+                                                        fmtTime(b.task.start.toLocalTime()),
+                                                        Color.White.copy(alpha = 0.92f),
+                                                        (if (narrow) 9 else 10).sp
                                                     )
-                                                    if (heightDp.value >= 44f) {
-                                                        Txt(
-                                                            fmtTime(b.task.start.toLocalTime()),
-                                                            Color.White.copy(alpha = 0.92f),
-                                                            (if (narrow) 9 else 10).sp
-                                                        )
-                                                    }
-                                                    if (heightDp.value >= 66f && b.task.note.isNotEmpty()) {
-                                                        Txt(
-                                                            b.task.note,
-                                                            Color.White.copy(alpha = 0.85f),
-                                                            (if (narrow) 9 else 10).sp
-                                                        )
-                                                    }
+                                                }
+                                                if (heightDp.value >= 66f && b.task.note.isNotEmpty()) {
+                                                    Txt(
+                                                        b.task.note,
+                                                        Color.White.copy(alpha = 0.85f),
+                                                        (if (narrow) 9 else 10).sp
+                                                    )
                                                 }
                                             }
                                         }
                                     }
                                 }
                             }
+                        }
 
-                            /* 当前时间线（画在今天所在的一列） */
-                            val colToday = today.dayOfWeek.value - 1
-                            val inThisWeek = !today.isBefore(monday) && !today.isAfter(monday.plusDays(6))
-                            if (inThisWeek) {
-                                val nowMin = now.hour * 60 + now.minute
-                                val yDp = nowMin / 60f * hourHeight.value
-                                Box(
-                                    Modifier
-                                        .fillMaxWidth()
-                                        .offset(y = yDp.dp)
-                                        .height(2.dp)
-                                ) {
-                                    Canvas(Modifier.fillMaxSize()) {
-                                        with(density) {
-                                            val x0 = (axisW + colW * colToday).toPx()
-                                            drawLine(
-                                                t.now, Offset(x0, 1f),
-                                                Offset(size.width, 1f), 2.dp.toPx()
-                                            )
-                                            drawCircle(t.now, 5.dp.toPx(), Offset(x0, 1f))
-                                        }
+                        /* 当前时间线（画在今天所在的一列） */
+                        val colToday = today.dayOfWeek.value - 1
+                        val inThisWeek =
+                            !today.isBefore(monday) && !today.isAfter(monday.plusDays(6))
+                        if (inThisWeek) {
+                            val nowMin = now.hour * 60 + now.minute
+                            val yDp = nowMin / 60f * hourHeight.value
+                            Box(
+                                Modifier
+                                    .fillMaxWidth()
+                                    .offset(y = yDp.dp)
+                                    .height(2.dp)
+                            ) {
+                                Canvas(Modifier.fillMaxSize()) {
+                                    with(density) {
+                                        val x0 = (axisW + colW * colToday).toPx()
+                                        drawLine(
+                                            t.now, Offset(x0, 1f),
+                                            Offset(size.width, 1f), 2.dp.toPx()
+                                        )
+                                        drawCircle(t.now, 5.dp.toPx(), Offset(x0, 1f))
                                     }
                                 }
                             }
                         }
                     }
                 }
+
+                if (embedded) {
+                    // 交给外层 WeekScreen 统一滚动，这里不再嵌套滚动容器
+                    Content()
+                } else {
+                    Box(
+                        Modifier
+                            .fillMaxWidth()
+                            .weight(1f)
+                            .clipToBounds()
+                    ) {
+                        Column(
+                            Modifier
+                                .fillMaxSize()
+                                .verticalScroll(scrollState)
+                                .testTag(TAG_WEEK_SCROLL)
+                        ) {
+                            Content()
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if (embedded) {
+        Table(modifier.fillMaxWidth())
+    } else {
+        Card(t, modifier) { Table(Modifier.fillMaxSize()) }
+    }
+}
+
+/**
+ * 手机竖屏的周视图整页：**日历 + 时间表合成一个界面**，整页上下滑动。
+ *
+ * 之前是「日历卡片固定在上 + 时间表自己滚动」，两块各滚各的；
+ * 现在合成一张卡片，滚动时日历先滑出、时间表接着上移，符合"一块屏幕往下看"的直觉。
+ */
+@Composable
+fun WeekScreen(
+    t: Theme,
+    modifier: Modifier = Modifier,
+    year: Int,
+    month: Int,
+    selected: LocalDate?,
+    onPrevMonth: () -> Unit,
+    onNextMonth: () -> Unit,
+    onPickDate: (LocalDate) -> Unit,
+    onToggleAutostart: (Boolean) -> Unit,
+    onShowDetail: (Task) -> Unit
+) {
+    val scroll = rememberScrollState()
+
+    Card(t, modifier.testTag(TAG_WEEK_SCREEN)) {
+        BoxWithConstraints(Modifier.fillMaxSize()) {
+            // 与月视图竖屏一致：格子接近正方形，整张卡片由内容决定高度
+            val cellW = (maxWidth - 8.dp) / 7
+            val cellH = (cellW * 0.92f).coerceIn(32.dp, 56.dp)
+
+            Column(
+                Modifier
+                    .fillMaxSize()
+                    .verticalScroll(scroll)
+                    .testTag(TAG_WEEK_SCROLL)
+            ) {
+                CalendarCard(
+                    t = t,
+                    modifier = Modifier.fillMaxWidth(),
+                    year = year,
+                    month = month,
+                    selected = selected,
+                    cellHeight = cellH,
+                    bare = true,
+                    showFooter = false,
+                    onPrevMonth = onPrevMonth,
+                    onNextMonth = onNextMonth,
+                    onPickDate = onPickDate,
+                    onToggleAutostart = onToggleAutostart
+                )
+                Hairline(t)
+                WeekGrid(
+                    t = t,
+                    embedded = true,
+                    onShowDetail = onShowDetail
+                )
             }
         }
     }
@@ -317,6 +403,7 @@ const val TAG_WEEK_SCROLL = "weekScroll"
 const val TAG_WEEK_COL = "weekCol"
 const val TAG_WEEK_BLOCK = "weekBlock"
 const val TAG_WEEK_CONTENT = "weekContent"
+const val TAG_WEEK_SCREEN = "weekScreen"
 
 data class WeekBlock(
     val task: Task,

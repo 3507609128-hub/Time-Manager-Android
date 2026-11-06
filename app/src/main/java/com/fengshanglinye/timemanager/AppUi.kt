@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.requiredSize
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
@@ -204,36 +205,46 @@ fun Toolbar(
     val selCount = AppState.selectedIds.size
     val delText = if (selCount == 0) S(Str.BTN_DELETE) else S(Str.BTN_DELETE_N).format(selCount)
 
-    /** 周视图的翻页控件：◀  10/19 – 10/25  ▶  本周 */
+    /**
+     * 周视图的翻页控件：◀  10/19 – 10/25  ▶  本周
+     *
+     * 箭头用 requiredSize 固定尺寸，避免窄屏（竖屏 320~411dp）下被 Row 挤压变形；
+     * 日期范围不再写死 116dp 宽度（那会留出一大截空白），改成按内容宽度；
+     * 整组默认居中，配合窄屏时独占一行。
+     */
     @Composable
-    fun WeekNav() {
-        Row(verticalAlignment = Alignment.CenterVertically) {
+    fun WeekNav(modifier: Modifier = Modifier) {
+        Row(
+            modifier,
+            horizontalArrangement = Arrangement.Center,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
             Box(
                 Modifier
-                    .size(34.dp)
+                    .requiredSize(34.dp)
                     .clip(RoundedCornerShape(6.dp))
                     .clickable { onPrevWeek() },
                 contentAlignment = Alignment.Center
             ) { Chevron(-1, t.text, 14.dp) }
             Spacer(Modifier.width(6.dp))
-            Box(Modifier.width(116.dp), contentAlignment = Alignment.Center) {
-                Txt(weekRange, t.text, 13.sp, FontWeight.Medium)
+            Box(Modifier.padding(horizontal = 2.dp), contentAlignment = Alignment.Center) {
+                Txt(weekRange, t.text, 13.sp, FontWeight.Medium, maxLines = 1)
             }
             Spacer(Modifier.width(6.dp))
             Box(
                 Modifier
-                    .size(34.dp)
+                    .requiredSize(34.dp)
                     .clip(RoundedCornerShape(6.dp))
                     .clickable { onNextWeek() },
                 contentAlignment = Alignment.Center
             ) { Chevron(1, t.text, 14.dp) }
-            Spacer(Modifier.width(6.dp))
+            Spacer(Modifier.width(8.dp))
             OutlineButton(S(Str.WEEK_TODAY), t) { onThisWeek() }
         }
     }
 
     BoxWithConstraints(Modifier.fillMaxWidth()) {
-        // 手机竖屏放不下一整行时，改成上下两行（切换器 + 翻页 / 三个操作按钮）
+        // 手机竖屏放不下一整行时，改成多行（切换器 / 翻页 / 三个操作按钮）
         val narrow = maxWidth < 560.dp
         if (narrow) {
             Column(Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 6.dp)) {
@@ -246,10 +257,11 @@ fun Toolbar(
                         onMonth = { onSwitch(true) },
                         onWeek = { onSwitch(false) }
                     )
-                    if (!isMonth) {
-                        Spacer(Modifier.width(8.dp))
-                        WeekNav()
-                    }
+                }
+                if (!isMonth) {
+                    // 翻周控件单独占一行并居中：竖屏下挨着切换器放会把右侧箭头挤扁
+                    Spacer(Modifier.height(6.dp))
+                    WeekNav(Modifier.fillMaxWidth())
                 }
                 Spacer(Modifier.height(6.dp))
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {

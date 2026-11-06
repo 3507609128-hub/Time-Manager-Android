@@ -85,28 +85,44 @@ class PortraitLayoutTest {
         assertTrue("日程表只剩 ${ag.height / 2f}dp", ag.height > 400f)
     }
 
-    /** 竖屏周视图：与月视图一样「日历在上、时间表在下」 */
+    /**
+     * 竖屏周视图：日历与时间表合成**一个界面**（同一张卡片、同一个滚动容器）。
+     *
+     * 以前是「日历固定在上 + 下方独立时间表」两块各自排版，用户反馈要合成一页并可整体上下滑动；
+     * 这里断言：两者在同一个滚动容器内、日历在时间表上方、整块铺满可用宽度。
+     */
     @Test
-    fun weekViewSharesPortrait() {
+    fun weekViewIsOneScrollableScreen() {
         compose.setContent { AppRoot() }
         compose.waitForIdle()
         // 切到周视图（工具栏上的「周视图」按钮）
         compose.onNodeWithText(S(Str.VIEW_WEEK)).performClick()
         compose.waitForIdle()
 
-        val cal = bounds(TAG_CALENDAR_CARD)
+        val screen = bounds(TAG_WEEK_SCREEN)
         val scroll = bounds(TAG_WEEK_SCROLL)
-        println("portrait week cal=${cal.height / 2f}dp grid=${scroll.height / 2f}dp")
+        val cal = bounds(TAG_CALENDAR_CARD)
+        val grid = bounds(TAG_WEEK_CONTENT)
+        println(
+            "portrait week screen=${screen.width / 2f}x${screen.height / 2f}dp " +
+                "cal=${cal.height / 2f}dp grid.top=${grid.top} grid.h=${grid.height / 2f}dp"
+        )
 
-        // 1) 周视图也要有日历卡片，且在时间表上方
+        // 1) 整页只有一个卡片（周视图整屏），且是滚动容器
+        assertTrue("周视图整屏应存在（screen=$screen）", screen.width > 600f && screen.height > 600f)
+        // 2) 日历在滚动容器内部（不再是外面独立的一块）
         assertTrue(
-            "竖屏周视图应显示日历（cal.bottom=${cal.bottom} grid.top=${scroll.top}）",
-            cal.bottom <= scroll.top + 1f
+            "日历应在滚动容器内：cal.top=${cal.top} scroll.top=${scroll.top}",
+            cal.top >= scroll.top - 2f
         )
         assertTrue("日历宽度应铺满：${cal.width / 2f}dp", cal.width > 600f)
-        // 2) 时间表占满剩余空间
-        assertTrue("时间表宽度应铺满：${scroll.width / 2f}dp", scroll.width > 600f)
-        assertTrue("时间表只剩 ${scroll.height / 2f}dp", scroll.height > 300f)
+        // 3) 时间表紧接在日历下方，并铺满宽度（24h 内容高于可视区 → 可上下滑动）
+        assertTrue(
+            "时间表应在日历下方：cal.bottom=${cal.bottom} grid.top=${grid.top}",
+            grid.top >= cal.bottom - 2f
+        )
+        assertTrue("时间表宽度应铺满：${grid.width / 2f}dp", grid.width > 600f)
+        assertTrue("时间表内容应高于可视区：${grid.height / 2f}dp", grid.height > scroll.height)
     }
 }
 

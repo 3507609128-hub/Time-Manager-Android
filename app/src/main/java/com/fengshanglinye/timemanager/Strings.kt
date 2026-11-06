@@ -185,6 +185,21 @@ enum class Str(private val line: String) {
     SYNC_SCAN_CANCEL("已取消扫码|スキャンをキャンセルしました|Scan cancelled"),
     SYNC_SCAN_NO_CAMERA("没有可用的相机，改为从相册选图|カメラが使えないためアルバムから選択します|No camera, pick an image instead"),
 
+    // 周视图里双击日程块弹出的详情卡片
+    DETAIL_TITLE("日程详情|予定の詳細|Event details"),
+    DETAIL_ID("编号 %d|番号 %d|No. %d"),
+    DETAIL_WHEN("时间|日時|When"),
+    DETAIL_DATE("日期|日付|Date"),
+    DETAIL_TIME("时间|時刻|Time"),
+    DETAIL_SPAN("跨天至 %s|%s まで|Until %s"),
+    DETAIL_NOTE("备注|メモ|Note"),
+    DETAIL_REMIND("提醒|通知|Reminders"),
+    DETAIL_NO_REMIND("没有提醒规则|通知ルールはありません|No reminders"),
+    DETAIL_FIRED("已提醒|通知済み|Notified"),
+    DETAIL_CLOSE("关闭|閉じる|Close"),
+    DETAIL_EDIT("编辑|編集|Edit"),
+    NO_TITLE("（未命名日程）|（無題）|(untitled)"),
+
     // 7 天 × 3 语言（中文 | 日本語 | English），每种语言占 7 个条目，顺序必须与 WEEK_FULL 一致
     WEEK_SHORT("日|一|二|三|四|五|六|日|月|火|水|木|金|土|Sun|Mon|Tue|Wed|Thu|Fri|Sat"),
     WEEK_FULL("周日|周一|周二|周三|周四|周五|周六|日曜日|月曜日|火曜日|水曜日|木曜日|金曜日|土曜日|Sunday|Monday|Tuesday|Wednesday|Thursday|Friday|Saturday"),
